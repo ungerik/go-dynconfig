@@ -44,11 +44,14 @@ func New[T any](file fs.File, onLoad func(T) T, onError func(error) T, onInvalid
 		onError:      onError,
 		onInvalidate: onInvalidate,
 	}
-	file.Dir().Watch(func(f fs.File, e fs.Event) {
+	err := file.Dir().Watch(func(f fs.File, e fs.Event) {
 		if f == file && e == fs.EventCreate || e == fs.EventWrite {
 			l.Invalidate()
 		}
 	})
+	if err != nil {
+		return nil, err
+	}
 	l.Get()
 	return l, nil
 }
