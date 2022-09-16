@@ -5,7 +5,11 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/stretchr/testify v1.8.0 h1:pSgiaMZlXftHpm5L7V1+rVB+AZJydKsMxsQBIJw4PKk=
 github.com/ungerik/go-fs v0.0.0-20220914194310-d0f079c4ea4a h1:mbffQgbXK2ClJ25w/iQrK7N3yQCdMWBJkT2O3/IR6vw=
 github.com/ungerik/go-fs v0.0.0-20220914194310-d0f079c4ea4a/go.mod h1:mSyrMGT/PfrBD+7UoJI/uLUcjZT0ZgNKog3rGIwEZ0A=
+github.com/ungerik/go-fs v0.0.0-20220916090844-593f6d256821 h1:7j3f0tre4sINfd0GxD2AyJopNpxNnjmRNbmg9RMCgaU=
+github.com/ungerik/go-fs v0.0.0-20220916090844-593f6d256821/go.mod h1:mSyrMGT/PfrBD+7UoJI/uLUcjZT0ZgNKog3rGIwEZ0A=
 golang.org/x/sys v0.0.0-20220412211240-33da011f77ad/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.0.0-20220913175220-63ea55921009 h1:PuvuRMeLWqsf/ZdT1UUZz0syhioyv1mzuFZsXs4fvhw=
 golang.org/x/sys v0.0.0-20220913175220-63ea55921009/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+golang.org/x/sys v0.0.0-20220915200043-7b5979e65e41 h1:ohgcoMbSofXygzo6AD2I1kz3BFmW1QArPYTtwEM3UXc=
+golang.org/x/sys v0.0.0-20220915200043-7b5979e65e41/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 gopkg.in/yaml.v3 v3.0.1 h1:fxVm/GzAzEWqLHuvctI91KS9hhNmmWOoWu0XTYJS7CA=

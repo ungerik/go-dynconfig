@@ -1,6 +1,7 @@
 package dynconfig
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/ungerik/go-fs"
@@ -13,6 +14,7 @@ type Loader[T any] struct {
 	onLoad       func(T) T
 	onError      func(error) T
 	onInvalidate func()
+	unwatch      func() error
 	config       T
 	loaded       bool
 }
@@ -25,11 +27,7 @@ func New[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, o
 		onError:      onError,
 		onInvalidate: onInvalidate,
 	}
-	err := file.Dir().Watch(func(f fs.File, e fs.Event) {
-		if f == file && e == fs.EventCreate || e == fs.EventWrite {
-			l.Invalidate()
-		}
-	})
+	err := l.WatchFile()
 	if err != nil {
 		return nil, err
 	}
@@ -45,10 +43,41 @@ func MustNew[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) 
 	return l
 }
 
+func (l *Loader[T]) WatchFile() error {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	if l.unwatch != nil {
+		return fmt.Errorf("config file already watched: %s", l.file.LocalPath())
+	}
+	unwatch, err := l.file.Dir().Watch(func(f fs.File, e fs.Event) {
+		if f == l.file && e == fs.EventCreate || e == fs.EventWrite {
+			l.Invalidate()
+		}
+	})
+	if err == nil {
+		l.unwatch = unwatch
+	}
+	return fmt.Errorf("watch config file error: %w", err)
+}
+
+func (l *Loader[T]) UnwatchFile() error {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	if l.unwatch == nil {
+		return fmt.Errorf("config file not watched: %s", l.file.LocalPath())
+	}
+	err := l.unwatch()
+	l.unwatch = nil
+	return err
+}
+
 func (l *Loader[T]) Invalidate() {
 	l.mtx.Lock()
 	l.loaded = false
 	l.mtx.Unlock()
+
 	if l.onInvalidate != nil {
 		l.onInvalidate()
 	}
