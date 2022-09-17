@@ -1,6 +1,7 @@
 package dynconfig
 
 import (
+	"context"
 	"encoding"
 	"fmt"
 	"strings"
@@ -10,7 +11,7 @@ import (
 
 func LoadTXT[T any](file fs.File) (config T, err error) {
 	var data []byte
-	data, err = file.ReadAll()
+	data, err = file.ReadAll(context.Background())
 	if err != nil {
 		return config, err
 	}
