@@ -24,52 +24,52 @@ func LoadStringTrimSpace[T ~string](file fs.File) (T, error) {
 	return T(strings.TrimSpace(str)), nil
 }
 
-func LoadStringLines[T ~string](file fs.File) ([]T, error) {
+func LoadStringLines[T []S, S ~string](file fs.File) (T, error) {
 	str, err := file.ReadAllString(context.Background())
 	if err != nil {
 		return nil, err
 	}
 	strs := splitLines(str)
-	return *(*[]T)(unsafe.Pointer(&strs)), nil
+	return *(*T)(unsafe.Pointer(&strs)), nil //#nosec G103 -- unsafe OK
 }
 
-func LoadStringLinesTrimSpace[T ~string](file fs.File) ([]T, error) {
+func LoadStringLinesTrimSpace[T []S, S ~string](file fs.File) (T, error) {
 	str, err := file.ReadAllString(context.Background())
 	if err != nil {
 		return nil, err
 	}
 	strs := splitLines(str)
-	result := make([]T, 0, len(strs))
+	result := make(T, 0, len(strs))
 	for _, s := range strs {
 		if s = strings.TrimSpace(s); s != "" {
-			result = append(result, T(s))
+			result = append(result, S(s))
 		}
 	}
 	return result, nil
 }
 
-func LoadStringLineSet[T ~string](file fs.File) (map[T]struct{}, error) {
+func LoadStringLineSet[T ~map[S]struct{}, S ~string](file fs.File) (T, error) {
 	str, err := file.ReadAllString(context.Background())
 	if err != nil {
 		return nil, err
 	}
 	strs := splitLines(str)
-	set := make(map[T]struct{}, len(strs))
+	set := make(T, len(strs))
 	for _, s := range strs {
-		set[T(s)] = struct{}{}
+		set[S(s)] = struct{}{}
 	}
 	return set, nil
 }
 
-func LoadStringLineSetTrimSpace[T ~string](file fs.File) (map[T]struct{}, error) {
+func LoadStringLineSetTrimSpace[T ~map[S]struct{}, S ~string](file fs.File) (T, error) {
 	str, err := file.ReadAllString(context.Background())
 	if err != nil {
 		return nil, err
 	}
 	strs := splitLines(str)
-	set := make(map[T]struct{}, len(strs))
+	set := make(T, len(strs))
 	for _, s := range strs {
-		set[T(strings.TrimSpace(s))] = struct{}{}
+		set[S(strings.TrimSpace(s))] = struct{}{}
 	}
 	return set, nil
 }
