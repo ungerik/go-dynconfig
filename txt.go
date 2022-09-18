@@ -1,89 +1,77 @@
 package dynconfig
 
 import (
-	"bytes"
 	"context"
-	"encoding"
-	"fmt"
 	"strings"
+	"unsafe"
 
 	"github.com/ungerik/go-fs"
 )
 
-func LoadTXT[T any](file fs.File) (config T, err error) {
-	var data []byte
-	data, err = file.ReadAll(context.Background())
+func LoadString[T ~string](file fs.File) (T, error) {
+	str, err := file.ReadAllString(context.Background())
 	if err != nil {
-		return config, err
+		return "", err
 	}
-	switch configPtr := any(&config).(type) {
-	case *string:
-		*configPtr = string(data)
-
-	case *[]byte:
-		*configPtr = data
-
-	case *[]string:
-		*configPtr = splitLines(string(data))
-
-	case *map[string]struct{}:
-		strs := splitLines(string(data))
-		m := make(map[string]struct{}, len(strs))
-		for _, s := range strs {
-			m[s] = struct{}{}
-		}
-		*configPtr = m
-
-	case encoding.TextUnmarshaler:
-		err = configPtr.UnmarshalText(data)
-		if err != nil {
-			return config, err
-		}
-
-	default:
-		return config, fmt.Errorf("type %T not supported by LoadTXT", config)
-	}
-	return config, nil
+	return T(str), nil
 }
 
-func LoadAndTrimSpaceTXT[T any](file fs.File) (config T, err error) {
-	var data []byte
-	data, err = file.ReadAll(context.Background())
+func LoadStringTrimSpace[T ~string](file fs.File) (T, error) {
+	str, err := file.ReadAllString(context.Background())
 	if err != nil {
-		return config, err
+		return "", err
 	}
-	switch configPtr := any(&config).(type) {
-	case *string:
-		*configPtr = string(bytes.TrimSpace(data))
+	return T(strings.TrimSpace(str)), nil
+}
 
-	case *[]byte:
-		*configPtr = bytes.TrimSpace(data)
-
-	case *[]string:
-		strs := splitLines(string(data))
-		for i, s := range *configPtr {
-			strs[i] = strings.TrimSpace(s)
-		}
-		*configPtr = strs
-
-	case *map[string]struct{}:
-		strs := splitLines(string(data))
-		m := make(map[string]struct{}, len(strs))
-		for _, s := range strs {
-			m[strings.TrimSpace(s)] = struct{}{}
-		}
-		*configPtr = m
-
-	case encoding.TextUnmarshaler:
-		err = configPtr.UnmarshalText(bytes.TrimSpace(data))
-		if err != nil {
-			return config, err
-		}
-
-	default:
-		return config, fmt.Errorf("type %T not supported by LoadTXT", config)
+func LoadStringLines[T ~string](file fs.File) ([]T, error) {
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return nil, err
 	}
-	return config, nil
+	strs := splitLines(str)
+	return *(*[]T)(unsafe.Pointer(&strs)), nil
+}
+
+func LoadStringLinesTrimSpace[T ~string](file fs.File) ([]T, error) {
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	strs := splitLines(str)
+	result := make([]T, 0, len(strs))
+	for _, s := range strs {
+		if s = strings.TrimSpace(s); s != "" {
+			result = append(result, T(s))
+		}
+	}
+	return result, nil
+}
+
+func LoadStringLineSet[T ~string](file fs.File) (map[T]struct{}, error) {
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	strs := splitLines(str)
+	set := make(map[T]struct{}, len(strs))
+	for _, s := range strs {
+		set[T(s)] = struct{}{}
+	}
+	return set, nil
+}
+
+func LoadStringLineSetTrimSpace[T ~string](file fs.File) (map[T]struct{}, error) {
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	strs := splitLines(str)
+	set := make(map[T]struct{}, len(strs))
+	for _, s := range strs {
+		set[T(strings.TrimSpace(s))] = struct{}{}
+	}
+	return set, nil
 }
 
 func splitLines(str string) []string {

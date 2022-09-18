@@ -27,7 +27,7 @@ func New[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, o
 		onError:      onError,
 		onInvalidate: onInvalidate,
 	}
-	err := l.WatchFile()
+	err := l.Watch()
 	if err != nil {
 		return nil, err
 	}
