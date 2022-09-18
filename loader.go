@@ -76,10 +76,11 @@ func (l *Loader[T]) Watch() error {
 			l.Invalidate()
 		}
 	})
-	if err == nil {
-		l.unwatch = unwatch
+	if err != nil {
+		return fmt.Errorf("watch config file error: %w", err)
 	}
-	return fmt.Errorf("watch config file error: %w", err)
+	l.unwatch = unwatch
+	return nil
 }
 
 func (l *Loader[T]) Unwatch() error {
