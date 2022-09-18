@@ -39,13 +39,13 @@ func LoadStringLinesTrimSpace[T []S, S ~string](file fs.File) (T, error) {
 		return nil, err
 	}
 	strs := splitLines(str)
-	result := make(T, 0, len(strs))
+	slice := make(T, 0, len(strs))
 	for _, s := range strs {
 		if s = strings.TrimSpace(s); s != "" {
-			result = append(result, S(s))
+			slice = append(slice, S(s))
 		}
 	}
-	return result, nil
+	return slice, nil
 }
 
 func LoadStringLineSet[T ~map[S]struct{}, S ~string](file fs.File) (T, error) {
@@ -69,7 +69,9 @@ func LoadStringLineSetTrimSpace[T ~map[S]struct{}, S ~string](file fs.File) (T, 
 	strs := splitLines(str)
 	set := make(T, len(strs))
 	for _, s := range strs {
-		set[S(strings.TrimSpace(s))] = struct{}{}
+		if s = strings.TrimSpace(s); s != "" {
+			set[S(s)] = struct{}{}
+		}
 	}
 	return set, nil
 }
