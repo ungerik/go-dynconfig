@@ -43,12 +43,33 @@ func MustNew[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) 
 	return l
 }
 
-func (l *Loader[T]) WatchFile() error {
+func (l *Loader[T]) File() fs.File {
+	return l.file
+}
+
+func (l *Loader[T]) Loaded() bool {
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	return l.loaded
+}
+
+func (l *Loader[T]) Invalidate() {
+	l.mtx.Lock()
+	l.loaded = false
+	l.mtx.Unlock()
+
+	if l.onInvalidate != nil {
+		l.onInvalidate()
+	}
+}
+
+func (l *Loader[T]) Watch() error {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
 	if l.unwatch != nil {
-		return fmt.Errorf("config file already watched: %s", l.file.LocalPath())
+		return fmt.Errorf("config file already watched: %s", l.file)
 	}
 	unwatch, err := l.file.Dir().Watch(func(f fs.File, e fs.Event) {
 		if f == l.file && e == fs.EventCreate || e == fs.EventWrite {
@@ -61,26 +82,16 @@ func (l *Loader[T]) WatchFile() error {
 	return fmt.Errorf("watch config file error: %w", err)
 }
 
-func (l *Loader[T]) UnwatchFile() error {
+func (l *Loader[T]) Unwatch() error {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
 	if l.unwatch == nil {
-		return fmt.Errorf("config file not watched: %s", l.file.LocalPath())
+		return fmt.Errorf("config file not watched: %s", l.file)
 	}
 	err := l.unwatch()
 	l.unwatch = nil
 	return err
-}
-
-func (l *Loader[T]) Invalidate() {
-	l.mtx.Lock()
-	l.loaded = false
-	l.mtx.Unlock()
-
-	if l.onInvalidate != nil {
-		l.onInvalidate()
-	}
 }
 
 func (l *Loader[T]) Get() T {

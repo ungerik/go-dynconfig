@@ -1,6 +1,7 @@
 package dynconfig
 
 import (
+	"bytes"
 	"context"
 	"encoding"
 	"fmt"
@@ -19,6 +20,9 @@ func LoadTXT[T any](file fs.File) (config T, err error) {
 	case *string:
 		*configPtr = string(data)
 
+	case *[]byte:
+		*configPtr = data
+
 	case *[]string:
 		*configPtr = splitLines(string(data))
 
@@ -30,9 +34,6 @@ func LoadTXT[T any](file fs.File) (config T, err error) {
 		}
 		*configPtr = m
 
-	case *[]byte:
-		*configPtr = data
-
 	case encoding.TextUnmarshaler:
 		err = configPtr.UnmarshalText(data)
 		if err != nil {
@@ -40,7 +41,47 @@ func LoadTXT[T any](file fs.File) (config T, err error) {
 		}
 
 	default:
-		return config, fmt.Errorf("type %T not supported by TXTLoader", config)
+		return config, fmt.Errorf("type %T not supported by LoadTXT", config)
+	}
+	return config, nil
+}
+
+func LoadAndTrimSpaceTXT[T any](file fs.File) (config T, err error) {
+	var data []byte
+	data, err = file.ReadAll(context.Background())
+	if err != nil {
+		return config, err
+	}
+	switch configPtr := any(&config).(type) {
+	case *string:
+		*configPtr = string(bytes.TrimSpace(data))
+
+	case *[]byte:
+		*configPtr = bytes.TrimSpace(data)
+
+	case *[]string:
+		strs := splitLines(string(data))
+		for i, s := range *configPtr {
+			strs[i] = strings.TrimSpace(s)
+		}
+		*configPtr = strs
+
+	case *map[string]struct{}:
+		strs := splitLines(string(data))
+		m := make(map[string]struct{}, len(strs))
+		for _, s := range strs {
+			m[strings.TrimSpace(s)] = struct{}{}
+		}
+		*configPtr = m
+
+	case encoding.TextUnmarshaler:
+		err = configPtr.UnmarshalText(bytes.TrimSpace(data))
+		if err != nil {
+			return config, err
+		}
+
+	default:
+		return config, fmt.Errorf("type %T not supported by LoadTXT", config)
 	}
 	return config, nil
 }
