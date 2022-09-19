@@ -5,17 +5,54 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/ungerik/go-fs"
+	env "github.com/caarlos0/env/v6"
+	fs "github.com/ungerik/go-fs"
 )
 
 func LoadJSON[T any](file fs.File) (config T, err error) {
 	err = file.ReadJSON(context.Background(), &config)
-	return config, err
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return config, nil
+}
+
+func LoadEnvJSON[T any](file fs.File) (config T, err error) {
+	err = file.ReadJSON(context.Background(), &config)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	err = env.Parse(&config)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return config, nil
 }
 
 func LoadXML[T any](file fs.File) (config T, err error) {
 	err = file.ReadXML(context.Background(), &config)
-	return config, err
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return config, nil
+}
+
+func LoadEnvXML[T any](file fs.File) (config T, err error) {
+	err = file.ReadXML(context.Background(), &config)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	err = env.Parse(&config)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	return config, nil
 }
 
 func LoadString[T ~string](file fs.File) (T, error) {
