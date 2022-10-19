@@ -72,7 +72,7 @@ func (l *Loader[T]) Watch() error {
 		return fmt.Errorf("config file already watched: %s", l.file)
 	}
 	unwatch, err := l.file.Dir().Watch(func(f fs.File, e fs.Event) {
-		if f == l.file && e == fs.EventCreate || e == fs.EventWrite {
+		if f == l.file && (e.HasCreate() || e.HasWrite()) {
 			l.Invalidate()
 		}
 	})
