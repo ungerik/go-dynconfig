@@ -56,7 +56,7 @@ func LoadEnvXML[T any](file fs.File) (config T, err error) {
 }
 
 func LoadString[T ~string](file fs.File) (T, error) {
-	str, err := file.ReadAllString(context.Background())
+	str, err := file.ReadAllString()
 	if err != nil {
 		return "", err
 	}
@@ -64,7 +64,7 @@ func LoadString[T ~string](file fs.File) (T, error) {
 }
 
 func LoadStringTrimSpace[T ~string](file fs.File) (T, error) {
-	str, err := file.ReadAllString(context.Background())
+	str, err := file.ReadAllString()
 	if err != nil {
 		return "", err
 	}
@@ -72,7 +72,7 @@ func LoadStringTrimSpace[T ~string](file fs.File) (T, error) {
 }
 
 func LoadStringLines[T []S, S ~string](file fs.File) (T, error) {
-	str, err := file.ReadAllString(context.Background())
+	str, err := file.ReadAllString()
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func LoadStringLines[T []S, S ~string](file fs.File) (T, error) {
 }
 
 func LoadStringLinesTrimSpace[T []S, S ~string](file fs.File) (T, error) {
-	str, err := file.ReadAllString(context.Background())
+	str, err := file.ReadAllString()
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func LoadStringLinesTrimSpace[T []S, S ~string](file fs.File) (T, error) {
 }
 
 func LoadStringLineSet[T ~map[S]struct{}, S ~string](file fs.File) (T, error) {
-	str, err := file.ReadAllString(context.Background())
+	str, err := file.ReadAllString()
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +109,7 @@ func LoadStringLineSet[T ~map[S]struct{}, S ~string](file fs.File) (T, error) {
 }
 
 func LoadStringLineSetTrimSpace[T ~map[S]struct{}, S ~string](file fs.File) (T, error) {
-	str, err := file.ReadAllString(context.Background())
+	str, err := file.ReadAllString()
 	if err != nil {
 		return nil, err
 	}
