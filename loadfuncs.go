@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unsafe"
 
-	env "github.com/caarlos0/env/v6"
+	env "github.com/caarlos0/env/v7"
 	fs "github.com/ungerik/go-fs"
 )
 
