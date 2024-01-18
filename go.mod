@@ -4,10 +4,10 @@ go 1.21
 
 require (
 	github.com/caarlos0/env/v7 v7.1.0
-	github.com/ungerik/go-fs v0.0.0-20230810132455-f7ff27f6fa2b
+	github.com/ungerik/go-fs v0.0.0-20240118121925-91844f9bdba8
 )
 
 require (
-	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	golang.org/x/sys v0.11.0 // indirect
+	github.com/fsnotify/fsnotify v1.7.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
 )

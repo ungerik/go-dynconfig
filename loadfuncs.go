@@ -13,8 +13,7 @@ import (
 func LoadJSON[T any](file fs.File) (config T, err error) {
 	err = file.ReadJSON(context.Background(), &config)
 	if err != nil {
-		var zero T
-		return zero, err
+		return *new(T), err
 	}
 	return config, nil
 }
@@ -25,13 +24,11 @@ func LoadJSON[T any](file fs.File) (config T, err error) {
 func LoadEnvJSON[T any](file fs.File) (config T, err error) {
 	err = file.ReadJSON(context.Background(), &config)
 	if err != nil {
-		var zero T
-		return zero, err
+		return *new(T), err
 	}
 	err = env.Parse(&config)
 	if err != nil {
-		var zero T
-		return zero, err
+		return *new(T), err
 	}
 	return config, nil
 }
@@ -40,8 +37,7 @@ func LoadEnvJSON[T any](file fs.File) (config T, err error) {
 func LoadXML[T any](file fs.File) (config T, err error) {
 	err = file.ReadXML(context.Background(), &config)
 	if err != nil {
-		var zero T
-		return zero, err
+		return *new(T), err
 	}
 	return config, nil
 }
@@ -52,13 +48,11 @@ func LoadXML[T any](file fs.File) (config T, err error) {
 func LoadEnvXML[T any](file fs.File) (config T, err error) {
 	err = file.ReadXML(context.Background(), &config)
 	if err != nil {
-		var zero T
-		return zero, err
+		return *new(T), err
 	}
 	err = env.Parse(&config)
 	if err != nil {
-		var zero T
-		return zero, err
+		return *new(T), err
 	}
 	return config, nil
 }
