@@ -5,7 +5,7 @@ Dynamic reload of a watched config file
 Example:
 
 ```go
-var emailBlackist = dynconfig.MustNew(
+var emailBlackist = dynconfig.MustLoadAndWatch(
 	fs.File("email-blacklist.txt"),
 	dynconfig.LoadStringLineSetTrimSpace[map[string]struct{}],
 	// onLoad

@@ -7,7 +7,7 @@ import (
 	"github.com/ungerik/go-fs"
 )
 
-var emailBlackist = dynconfig.MustNew(
+var emailBlackist = dynconfig.MustLoadAndWatch(
 	fs.File("email-blacklist.txt"),
 	dynconfig.LoadStringLineSetTrimSpace[map[string]struct{}],
 	// onLoad

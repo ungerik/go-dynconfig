@@ -22,24 +22,37 @@ type Loader[T any] struct {
 	loaded       bool
 }
 
-// New returns a new Loader for the type T
-// that watches the given file for changes.
-// The passed load function is called to load the configuration.
-// onLoad, onError, and onInvalidate are optional callbacks.
-// If the file can't be watched, then an error is returned.
-// In case of an initial loading error
-// the error is returned if onError is nil,
-// else onError is called to handle the error
-// and New returns the Loader without the error.
-func New[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, onError func(error) T, onInvalidate func()) (*Loader[T], error) {
-	l := &Loader[T]{
+// NewLoader returns a new Loader for the type T
+// without loading the configuration yet.
+func NewLoader[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, onError func(error) T, onInvalidate func()) *Loader[T] {
+	return &Loader[T]{
 		file:         file,
 		load:         load,
 		onLoad:       onLoad,
 		onError:      onError,
 		onInvalidate: onInvalidate,
 	}
-	err := l.Watch()
+}
+
+// LoadAndWatch returns a new Loader for the type T
+// that watches the given file for changes.
+//
+// The passed load function is called to load the configuration.
+// onLoad, onError, and onInvalidate are optional callbacks.
+//
+// If the file's directory can't be watched, then an error is returned.
+// No watching error is returned if the file does not exist yet,
+// but file's directory exists.
+// The file will then be loaded as soon as it is
+// created within the watched directory.
+//
+// In case of an initial loading error
+// the error is returned if onError is nil,
+// else onError is called to handle the error and
+// LoadAndWatch returns the Loader without the error.
+func LoadAndWatch[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, onError func(error) T, onInvalidate func()) (*Loader[T], error) {
+	l := NewLoader(file, load, onLoad, onError, onInvalidate)
+	err := l.Watch() // May invalidate before load which is OK
 	if err != nil {
 		return nil, err
 	}
@@ -52,9 +65,9 @@ func New[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, o
 	return l, nil
 }
 
-// MustNew calls New and panics on any error that it returns.
-func MustNew[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, onError func(error) T, onInvalidate func()) *Loader[T] {
-	l, err := New(file, load, onLoad, onError, onInvalidate)
+// MustLoadAndWatch calls LoadAndWatch and panics on any error that it returns.
+func MustLoadAndWatch[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, onError func(error) T, onInvalidate func()) *Loader[T] {
+	l, err := LoadAndWatch(file, load, onLoad, onError, onInvalidate)
 	if err != nil {
 		panic(err)
 	}
@@ -85,7 +98,10 @@ func (l *Loader[T]) Invalidate() {
 	}
 }
 
-// Watch starts watching the file for changes.
+// Watch starts watching the file's directory for
+// writes of the file to invalidate the configuration.
+// A deletion of the file does not invalidate
+// the configuration, but a (re)creation does.
 // It returns an error if the file is already watched.
 func (l *Loader[T]) Watch() error {
 	l.mtx.Lock()
