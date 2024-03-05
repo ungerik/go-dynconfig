@@ -10,6 +10,8 @@ import (
 
 // Loader watches a file for changes and loads a configuration of type T from it
 // using a load function. The configuration is reloaded on file changes.
+//
+// All methods can be called on a nil Loader and are thread-safe.
 type Loader[T any] struct {
 	mtx          sync.Mutex
 	file         fs.File
@@ -24,6 +26,8 @@ type Loader[T any] struct {
 
 // NewLoader returns a new Loader for the type T
 // without loading the configuration yet.
+//
+// See LoadAndWatch for more details.
 func NewLoader[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, onError func(error) T, onInvalidate func()) *Loader[T] {
 	return &Loader[T]{
 		file:         file,
@@ -36,6 +40,8 @@ func NewLoader[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T
 
 // LoadAndWatch returns a new Loader for the type T
 // that watches the given file for changes.
+//
+// All methods can be called on a nil Loader and are thread-safe.
 //
 // The passed load function is called to load the configuration.
 // onLoad, onError, and onInvalidate are optional callbacks.
@@ -51,6 +57,12 @@ func NewLoader[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T
 // else onError is called to handle the error and
 // LoadAndWatch returns the Loader without the error.
 func LoadAndWatch[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, onError func(error) T, onInvalidate func()) (*Loader[T], error) {
+	if load == nil {
+		return nil, errors.New("load function must not be nil")
+	}
+	if file == "" {
+		return nil, errors.New("file path must not be empty")
+	}
 	l := NewLoader(file, load, onLoad, onError, onInvalidate)
 	err := l.Watch() // May invalidate before load which is OK
 	if err != nil {
@@ -66,6 +78,8 @@ func LoadAndWatch[T any](file fs.File, load func(fs.File) (T, error), onLoad fun
 }
 
 // MustLoadAndWatch calls LoadAndWatch and panics on any error that it returns.
+//
+// See LoadAndWatch for more details.
 func MustLoadAndWatch[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, onError func(error) T, onInvalidate func()) *Loader[T] {
 	l, err := LoadAndWatch(file, load, onLoad, onError, onInvalidate)
 	if err != nil {
@@ -76,11 +90,17 @@ func MustLoadAndWatch[T any](file fs.File, load func(fs.File) (T, error), onLoad
 
 // File returns the file that is watched for changes.
 func (l *Loader[T]) File() fs.File {
+	if l == nil {
+		return fs.InvalidFile
+	}
 	return l.file
 }
 
 // Loaded returns true if the configuration has been loaded.
 func (l *Loader[T]) Loaded() bool {
+	if l == nil {
+		return false
+	}
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
@@ -89,6 +109,9 @@ func (l *Loader[T]) Loaded() bool {
 
 // Invalidate marks the configuration as not loaded.
 func (l *Loader[T]) Invalidate() {
+	if l == nil {
+		return
+	}
 	l.mtx.Lock()
 	l.loaded = false
 	l.mtx.Unlock()
@@ -104,6 +127,9 @@ func (l *Loader[T]) Invalidate() {
 // the configuration, but a (re)creation does.
 // It returns an error if the file is already watched.
 func (l *Loader[T]) Watch() error {
+	if l == nil {
+		return errors.New("<nil> Loader")
+	}
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
@@ -125,6 +151,9 @@ func (l *Loader[T]) Watch() error {
 // Unwatch stops watching the file for changes.
 // It returns an error if the file is not watched.
 func (l *Loader[T]) Unwatch() error {
+	if l == nil {
+		return errors.New("<nil> Loader")
+	}
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
@@ -140,7 +169,14 @@ func (l *Loader[T]) Unwatch() error {
 // or if not loaded or invalidated loads it first.
 // In case of a loading error the last known configuration is returned,
 // or whatever onError returns if onError is not nil.
+//
+// It is valid to call this method on a nil Loader,
+// in which case it returns the zero value of T
+// and and an error.
 func (l *Loader[T]) Load() (T, error) {
+	if l == nil {
+		return *new(T), errors.New("<nil> Loader")
+	}
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
@@ -168,6 +204,9 @@ func (l *Loader[T]) Load() (T, error) {
 // or if not loaded or invalidated loads it first.
 // In case of a loading error the last known configuration is returned,
 // or whatever onError returns if onError is not nil.
+//
+// It is valid to call this method on a nil Loader,
+// in which case it returns the zero value of T.
 func (l *Loader[T]) Get() T {
 	config, _ := l.Load()
 	return config
