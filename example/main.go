@@ -1,10 +1,12 @@
-# go-dynconfig
+package main
 
-Dynamic reload of a watched config file
+import (
+	"log"
 
-Example:
+	"github.com/ungerik/go-dynconfig"
+	"github.com/ungerik/go-fs"
+)
 
-```go
 var emailBlackist = dynconfig.MustNew(
 	fs.File("email-blacklist.txt"),
 	dynconfig.LoadStringLineSetTrimSpace[map[string]struct{}],
@@ -29,4 +31,3 @@ func main() {
 	// independent of any errors during loading
 	log.Printf("Blacklisted: %s", emailBlackist.Get())
 }
-```

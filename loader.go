@@ -1,12 +1,15 @@
 package dynconfig
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/ungerik/go-fs"
 )
 
+// Loader watches a file for changes and loads a configuration of type T from it
+// using a load function. The configuration is reloaded on file changes.
 type Loader[T any] struct {
 	mtx          sync.Mutex
 	file         fs.File
@@ -19,6 +22,15 @@ type Loader[T any] struct {
 	loaded       bool
 }
 
+// New returns a new Loader for the type T
+// that watches the given file for changes.
+// The passed load function is called to load the configuration.
+// onLoad, onError, and onInvalidate are optional callbacks.
+// If the file can't be watched, then an error is returned.
+// In case of an initial loading error
+// the error is returned if onError is nil,
+// else onError is called to handle the error
+// and New returns the Loader without the error.
 func New[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, onError func(error) T, onInvalidate func()) (*Loader[T], error) {
 	l := &Loader[T]{
 		file:         file,
@@ -31,10 +43,16 @@ func New[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, o
 	if err != nil {
 		return nil, err
 	}
-	l.Get()
+	_, err = l.Load()
+	if err != nil && onError == nil {
+		// Unwatch and return error if no onError
+		return nil, errors.Join(err, l.unwatch())
+	}
+	// In case of an error, onError was called within Load
 	return l, nil
 }
 
+// MustNew calls New and panics on any error that it returns.
 func MustNew[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) T, onError func(error) T, onInvalidate func()) *Loader[T] {
 	l, err := New(file, load, onLoad, onError, onInvalidate)
 	if err != nil {
@@ -43,10 +61,12 @@ func MustNew[T any](file fs.File, load func(fs.File) (T, error), onLoad func(T) 
 	return l
 }
 
+// File returns the file that is watched for changes.
 func (l *Loader[T]) File() fs.File {
 	return l.file
 }
 
+// Loaded returns true if the configuration has been loaded.
 func (l *Loader[T]) Loaded() bool {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
@@ -54,6 +74,7 @@ func (l *Loader[T]) Loaded() bool {
 	return l.loaded
 }
 
+// Invalidate marks the configuration as not loaded.
 func (l *Loader[T]) Invalidate() {
 	l.mtx.Lock()
 	l.loaded = false
@@ -64,6 +85,8 @@ func (l *Loader[T]) Invalidate() {
 	}
 }
 
+// Watch starts watching the file for changes.
+// It returns an error if the file is already watched.
 func (l *Loader[T]) Watch() error {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
@@ -83,6 +106,8 @@ func (l *Loader[T]) Watch() error {
 	return nil
 }
 
+// Unwatch stops watching the file for changes.
+// It returns an error if the file is not watched.
 func (l *Loader[T]) Unwatch() error {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
@@ -95,20 +120,24 @@ func (l *Loader[T]) Unwatch() error {
 	return err
 }
 
-func (l *Loader[T]) Get() T {
+// Load returns the loaded configuration,
+// or if not loaded or invalidated loads it first.
+// In case of a loading error the last known configuration is returned,
+// or whatever onError returns if onError is not nil.
+func (l *Loader[T]) Load() (T, error) {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
 	if l.loaded {
-		return l.config
+		return l.config, nil
 	}
 
 	config, err := l.load(l.file)
 	if err != nil {
 		if l.onError != nil {
-			return l.onError(err)
+			return l.onError(err), err
 		}
-		return l.config // Return last known config
+		return l.config, err // Return last known config
 	}
 	if l.onLoad != nil {
 		l.config = l.onLoad(config)
@@ -116,5 +145,14 @@ func (l *Loader[T]) Get() T {
 		l.config = config
 	}
 	l.loaded = true
-	return l.config
+	return l.config, nil
+}
+
+// Get returns the loaded configuration,
+// or if not loaded or invalidated loads it first.
+// In case of a loading error the last known configuration is returned,
+// or whatever onError returns if onError is not nil.
+func (l *Loader[T]) Get() T {
+	config, _ := l.Load()
+	return config
 }

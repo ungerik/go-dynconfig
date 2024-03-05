@@ -1,61 +1,11 @@
 package dynconfig
 
 import (
-	"context"
 	"strings"
 	"unsafe"
 
-	env "github.com/caarlos0/env/v7"
-	fs "github.com/ungerik/go-fs"
+	"github.com/ungerik/go-fs"
 )
-
-// LoadJSON unmarshals the passed JSON file into a config of type T.
-func LoadJSON[T any](file fs.File) (config T, err error) {
-	err = file.ReadJSON(context.Background(), &config)
-	if err != nil {
-		return *new(T), err
-	}
-	return config, nil
-}
-
-// LoadEnvJSON unmarshals the passed JSON file into a config of type T
-// and then parses environment variables into the config
-// by looking for struct fields with an `env` tag.
-func LoadEnvJSON[T any](file fs.File) (config T, err error) {
-	err = file.ReadJSON(context.Background(), &config)
-	if err != nil {
-		return *new(T), err
-	}
-	err = env.Parse(&config)
-	if err != nil {
-		return *new(T), err
-	}
-	return config, nil
-}
-
-// LoadXML unmarshals the passed XML file into a config of type T.
-func LoadXML[T any](file fs.File) (config T, err error) {
-	err = file.ReadXML(context.Background(), &config)
-	if err != nil {
-		return *new(T), err
-	}
-	return config, nil
-}
-
-// LoadXML unmarshals the passed XML file into a config of type T
-// and then parses environment variables into the config
-// by looking for struct fields with an `env` tag.
-func LoadEnvXML[T any](file fs.File) (config T, err error) {
-	err = file.ReadXML(context.Background(), &config)
-	if err != nil {
-		return *new(T), err
-	}
-	err = env.Parse(&config)
-	if err != nil {
-		return *new(T), err
-	}
-	return config, nil
-}
 
 // LoadString reads the passed file as a string type T.
 func LoadString[T ~string](file fs.File) (T, error) {
