@@ -26,6 +26,8 @@ func LoadStringTrimSpace[T ~string](file fs.File) (T, error) {
 	return T(strings.TrimSpace(str)), nil
 }
 
+// LoadStringLines parses the passed file as a slice of strings of type S
+// by splitting the file content at newlines.
 func LoadStringLines[T []S, S ~string](file fs.File) (T, error) {
 	str, err := file.ReadAllString()
 	if err != nil {
@@ -35,6 +37,9 @@ func LoadStringLines[T []S, S ~string](file fs.File) (T, error) {
 	return *(*T)(unsafe.Pointer(&strs)), nil //#nosec G103 -- unsafe OK
 }
 
+// LoadStringLinesTrimSpace parses the passed file as a slice of strings of type S
+// by splitting the file content at newlines
+// and trims leading and trailing whitespace from each line.
 func LoadStringLinesTrimSpace[T []S, S ~string](file fs.File) (T, error) {
 	str, err := file.ReadAllString()
 	if err != nil {
@@ -50,6 +55,8 @@ func LoadStringLinesTrimSpace[T []S, S ~string](file fs.File) (T, error) {
 	return slice, nil
 }
 
+// LoadStringLineSet parses the passed file as a unique set of strings of type S
+// by splitting the file content at newlines.
 func LoadStringLineSet[T ~map[S]struct{}, S ~string](file fs.File) (T, error) {
 	str, err := file.ReadAllString()
 	if err != nil {
@@ -63,6 +70,9 @@ func LoadStringLineSet[T ~map[S]struct{}, S ~string](file fs.File) (T, error) {
 	return set, nil
 }
 
+// LoadStringLineSetTrimSpace parses the passed file as a unique set of strings of type S
+// by splitting the file content at newlines
+// and trims leading and trailing whitespace from each line.
 func LoadStringLineSetTrimSpace[T ~map[S]struct{}, S ~string](file fs.File) (T, error) {
 	str, err := file.ReadAllString()
 	if err != nil {
