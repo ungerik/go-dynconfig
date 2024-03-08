@@ -3,7 +3,6 @@ package dynconfig
 import (
 	"context"
 
-	env "github.com/caarlos0/env/v7"
 	"github.com/ungerik/go-fs"
 )
 
@@ -24,7 +23,7 @@ func LoadEnvXML[T any](file fs.File) (config T, err error) {
 	if err != nil {
 		return *new(T), err
 	}
-	err = env.Parse(&config)
+	err = ParseEnv(&config)
 	if err != nil {
 		return *new(T), err
 	}

@@ -6,6 +6,20 @@ import (
 	"github.com/ungerik/go-dynconfig"
 )
 
+type Config struct {
+	A string
+	B bool
+	C int
+}
+
+var config = dynconfig.MustLoadAndWatch(
+	"config.json",
+	dynconfig.LoadEnvJSON[*Config],
+	nil, // onLoad
+	nil, // onError
+	nil, // onInvalidate
+)
+
 var emailBlackist = dynconfig.MustLoadAndWatch(
 	"email-blacklist.txt",
 	dynconfig.LoadStringLineSetTrimSpace[map[string]struct{}],
@@ -28,5 +42,8 @@ var emailBlackist = dynconfig.MustLoadAndWatch(
 func main() {
 	// Get will always return the latest configuration
 	// independent of any errors during loading
-	log.Printf("Blacklisted: %s", emailBlackist.Get())
+
+	log.Printf("Loaded config: %#v", config.Get())
+
+	log.Printf("Loaded blacklist: %s", emailBlackist.Get())
 }
