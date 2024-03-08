@@ -12,7 +12,8 @@ import (
 // This global configuration function is used by
 // LoadEnvJSON and LoadEnvXML.
 var ParseEnv = func(dest any) error {
-	// Deref pointer to pointer because env.Parse only accepts pointers
+	// Deref pointer to pointer because env.Parse
+	// only accepts pointers to structs
 	v := reflect.ValueOf(dest)
 	if v.Kind() == reflect.Ptr && v.Elem().Kind() == reflect.Ptr {
 		dest = v.Elem().Interface()
