@@ -12,17 +12,22 @@ type Config struct {
 	C int
 }
 
+// Load config of type *Config from "config.json" and watch for changes.
+// config.Get() will return the latest configuration of type *Config
+// independent of any errors during loading.
 var config = dynconfig.MustLoadAndWatch(
 	"config.json",
 	dynconfig.LoadEnvJSON[*Config],
 	nil, // onLoad
-	nil, // onError
+	nil, // onError: nil means that errors will panic
 	nil, // onInvalidate
 )
 
+// Use the callbacks to log what's happening
+// and return a default configuration in case of an error.
 var emailBlackist = dynconfig.MustLoadAndWatch(
 	"email-blacklist.txt",
-	dynconfig.LoadStringLineSetTrimSpace[map[string]struct{}],
+	dynconfig.LoadStringLineSetTrimSpace,
 	// onLoad
 	func(loaded map[string]struct{}) map[string]struct{} {
 		log.Printf("Loaded email blacklist with %d addresses", len(loaded))
@@ -42,8 +47,6 @@ var emailBlackist = dynconfig.MustLoadAndWatch(
 func main() {
 	// Get will always return the latest configuration
 	// independent of any errors during loading
-
 	log.Printf("Loaded config: %#v", config.Get())
-
 	log.Printf("Loaded blacklist: %s", emailBlackist.Get())
 }
