@@ -4,11 +4,10 @@ import (
 	"log"
 
 	"github.com/ungerik/go-dynconfig"
-	"github.com/ungerik/go-fs"
 )
 
 var emailBlackist = dynconfig.MustLoadAndWatch(
-	fs.File("email-blacklist.txt"),
+	"email-blacklist.txt",
 	dynconfig.LoadStringLineSetTrimSpace[map[string]struct{}],
 	// onLoad
 	func(loaded map[string]struct{}) map[string]struct{} {
@@ -18,7 +17,7 @@ var emailBlackist = dynconfig.MustLoadAndWatch(
 	// onError
 	func(err error) map[string]struct{} {
 		log.Printf("Can't load email blacklist because: %s", err)
-		return map[string]struct{}{"spam@gmail.com": {}} // default in case of an error
+		return map[string]struct{}{"spam1@example.com": {}} // default in case of an error
 	},
 	// onInvalidate
 	func() {
