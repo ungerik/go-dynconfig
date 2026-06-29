@@ -4,6 +4,7 @@ import (
 	"log"
 
 	"github.com/ungerik/go-dynconfig"
+	"github.com/ungerik/go-dynconfig/loadenv"
 )
 
 type Config struct {
@@ -17,7 +18,8 @@ type Config struct {
 // independent of any errors during loading.
 var config = dynconfig.MustLoadAndWatch(
 	"config.json",
-	dynconfig.LoadEnvJSON[*Config],
+	loadenv.LoadEnvJSON[*Config],
+	nil, // save: nil means Set is not used
 	nil, // onLoad
 	nil, // onError: nil means that errors will panic
 	nil, // onInvalidate
@@ -28,6 +30,7 @@ var config = dynconfig.MustLoadAndWatch(
 var emailBlackist = dynconfig.MustLoadAndWatch(
 	"email-blacklist.txt",
 	dynconfig.LoadStringLineSetTrimSpace,
+	nil, // save: nil means Set is not used
 	// onLoad
 	func(loaded map[string]struct{}) map[string]struct{} {
 		log.Printf("Loaded email blacklist with %d addresses", len(loaded))

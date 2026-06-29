@@ -1,4 +1,20 @@
-package dynconfig
+// Package loadenv provides configuration loaders that overlay environment
+// variables on top of a parsed file, plus the configurable ParseEnv function
+// they use.
+//
+// It is split into its own module so that the core github.com/ungerik/go-dynconfig
+// module does not depend on github.com/caarlos0/env/v7. Import this package only
+// when you need environment-variable overrides.
+//
+// The loaders returned here satisfy the load function signature expected by
+// dynconfig.LoadAndWatch / MustLoadAndWatch:
+//
+//	loader := dynconfig.MustLoadAndWatch(
+//	    "config.json",
+//	    loadenv.LoadEnvJSON[*Config],
+//	    nil, nil, nil, nil,
+//	)
+package loadenv
 
 import (
 	"reflect"
@@ -52,14 +68,14 @@ import (
 //	}
 //
 //	config := &Config{}
-//	if err := dynconfig.ParseEnv(config); err != nil {
+//	if err := loadenv.ParseEnv(config); err != nil {
 //	    log.Fatal(err)
 //	}
 //
 // Custom Parser Example:
 //
 //	// Replace with custom implementation
-//	dynconfig.ParseEnv = func(dest any) error {
+//	loadenv.ParseEnv = func(dest any) error {
 //	    // Your custom environment parsing logic
 //	    return customEnvParser(dest)
 //	}

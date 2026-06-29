@@ -48,60 +48,38 @@ func LoadJSON[T any](file fs.File) (config T, err error) {
 	return config, nil
 }
 
-// LoadEnvJSON returns a function that loads JSON configuration with environment variable overrides.
+// SaveJSON returns a save function that marshals a configuration value of type T
+// to JSON and writes it to the file, overwriting any existing content.
 //
-// This is a loader function compatible with LoadAndWatch and MustLoadAndWatch.
-// The returned function:
-//  1. Unmarshals the JSON file into a configuration struct of type T
-//  2. Overrides values with environment variables based on `env` struct tags
+// The optional indent arguments are passed to fs.File.WriteJSON: with no
+// arguments the JSON is written compact, otherwise the concatenated indent
+// strings are used for line indentation.
 //
-// Environment variables are parsed using the `env` struct tag.
-// See ParseEnv for details on struct tag format and supported types.
+// It is the write counterpart to LoadJSON and is designed to be passed as the
+// save function to the constructor for use by Loader.Mutate and Loader.Set.
 //
 // Type Parameters:
-//   - T: The configuration type to unmarshal from JSON
+//   - T: The configuration type to marshal to JSON
 //
 // Example:
 //
 //	type Config struct {
-//	    Database string `json:"database" env:"DB_NAME"`
-//	    Port     int    `json:"port"     env:"APP_PORT"`
-//	    Debug    bool   `json:"debug"    env:"DEBUG"`
+//	    Database string `json:"database"`
+//	    Port     int    `json:"port"`
 //	}
-//
-//	// config.json contains: {"database": "dev.db", "port": 3000, "debug": false}
-//	// Environment has: DB_NAME=prod.db, APP_PORT=8080
 //
 //	loader := dynconfig.MustLoadAndWatch(
 //	    "config.json",
-//	    dynconfig.LoadEnvJSON[*Config],
+//	    dynconfig.LoadJSON[Config],
+//	    dynconfig.SaveJSON[Config]("  "),
 //	    nil, nil, nil,
 //	)
-//
-//	config := loader.Get()
-//	// Result: {Database: "prod.db", Port: 8080, Debug: false}
-//	// DB_NAME and APP_PORT from environment override JSON values
-//
-// Example with error handling:
-//
-//	loader, err := dynconfig.LoadAndWatch(
-//	    "config.json",
-//	    dynconfig.LoadEnvJSON[Config],
-//	    nil,
-//	    func(err error) Config {
-//	        log.Printf("Config error: %v", err)
-//	        return Config{Database: "fallback.db", Port: 8080}
-//	    },
-//	    nil,
-//	)
-func LoadEnvJSON[T any](file fs.File) (config T, err error) {
-	err = file.ReadJSON(context.Background(), &config)
-	if err != nil {
-		return *new(T), err
+//	err := loader.Mutate(false, func(cfg Config) (Config, error) {
+//	    cfg.Port = 9090
+//	    return cfg, nil
+//	})
+func SaveJSON[T any](indent ...string) func(file fs.File, config T) error {
+	return func(file fs.File, config T) error {
+		return file.WriteJSON(context.Background(), config, indent...)
 	}
-	err = ParseEnv(&config)
-	if err != nil {
-		return *new(T), err
-	}
-	return config, nil
 }
