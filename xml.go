@@ -41,48 +41,39 @@ func LoadXML[T any](file fs.File) (config T, err error) {
 	return config, nil
 }
 
-// LoadEnvXML returns a function that loads XML configuration with environment variable overrides.
+// SaveXML returns a save function that marshals a configuration value of type T
+// to XML and writes it to the file, overwriting any existing content.
 //
-// This is a loader function compatible with LoadAndWatch and MustLoadAndWatch.
-// The returned function:
-//  1. Unmarshals the XML file into a configuration struct of type T
-//  2. Overrides values with environment variables based on `env` struct tags
+// The optional indent arguments are passed to fs.File.WriteXML: with no
+// arguments the XML is written compact, otherwise the concatenated indent
+// strings are used for line indentation.
 //
-// Environment variables are parsed using the `env` struct tag.
-// See ParseEnv for details on struct tag format and supported types.
+// It is the write counterpart to LoadXML and is designed to be passed as the
+// save function to the constructor for use by Loader.Mutate and Loader.Set.
 //
 // Type Parameters:
-//   - T: The configuration type to unmarshal from XML
+//   - T: The configuration type to marshal to XML
 //
 // Example:
 //
 //	type Config struct {
 //	    XMLName  xml.Name `xml:"config"`
-//	    Database string   `xml:"database" env:"DB_NAME"`
-//	    Port     int      `xml:"port"     env:"APP_PORT"`
-//	    Debug    bool     `xml:"debug"    env:"DEBUG"`
+//	    Database string   `xml:"database"`
+//	    Port     int      `xml:"port"`
 //	}
-//
-//	// config.xml contains: <config><database>dev.db</database><port>3000</port></config>
-//	// Environment has: DB_NAME=prod.db, APP_PORT=8080
 //
 //	loader := dynconfig.MustLoadAndWatch(
 //	    "config.xml",
-//	    dynconfig.LoadEnvXML[*Config],
+//	    dynconfig.LoadXML[Config],
+//	    dynconfig.SaveXML[Config]("  "),
 //	    nil, nil, nil,
 //	)
-//
-//	config := loader.Get()
-//	// Result: {Database: "prod.db", Port: 8080, Debug: false}
-//	// DB_NAME and APP_PORT from environment override XML values
-func LoadEnvXML[T any](file fs.File) (config T, err error) {
-	err = file.ReadXML(context.Background(), &config)
-	if err != nil {
-		return *new(T), err
+//	err := loader.Mutate(false, func(cfg Config) (Config, error) {
+//	    cfg.Port = 9090
+//	    return cfg, nil
+//	})
+func SaveXML[T any](indent ...string) func(file fs.File, config T) error {
+	return func(file fs.File, config T) error {
+		return file.WriteXML(context.Background(), config, indent...)
 	}
-	err = ParseEnv(&config)
-	if err != nil {
-		return *new(T), err
-	}
-	return config, nil
 }

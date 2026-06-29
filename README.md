@@ -10,10 +10,10 @@ Dynamic configuration loading with automatic file watching and reloading. Perfec
 - **Automatic Reloading**: Watches config files and reloads on changes
 - **Type-Safe**: Generic API ensures type safety at compile time
 - **Multiple Formats**: Built-in support for JSON, XML, and text files
-- **Environment Variables**: Merge environment variables with file-based config
+- **Environment Variables**: Merge environment variables with file-based config (via the `loadenv` submodule)
 - **Error Recovery**: Configurable error handling with fallback values
 - **Thread-Safe**: All operations are safe for concurrent use
-- **Zero Dependencies**: Uses standard library (except for env parsing)
+- **Minimal Dependencies**: The core module only needs `ungerik/go-fs` and `golang.org/x/sys`; environment-variable support is isolated in the `github.com/ungerik/go-dynconfig/loadenv` submodule, which additionally uses `caarlos0/env/v7`
 
 ## Installation
 
@@ -44,6 +44,7 @@ func main() {
     config := dynconfig.MustLoadAndWatch(
         "config.json",
         dynconfig.LoadJSON[*Config],
+        nil, // save (write-back function used by Set)
         nil, // onLoad callback
         nil, // onError (nil = panic on error)
         nil, // onInvalidate callback
@@ -65,6 +66,7 @@ func main() {
 var emailBlacklist = dynconfig.MustLoadAndWatch(
     "email-blacklist.txt",
     dynconfig.LoadStringLineSetTrimSpace,
+    nil, // save (write-back function used by Set)
     // onLoad: log successful loads
     func(loaded map[string]struct{}) map[string]struct{} {
         log.Printf("Loaded %d blacklisted emails", len(loaded))
@@ -146,6 +148,7 @@ type AppConfig struct {
 config := dynconfig.MustLoadAndWatch(
     "config.json",
     dynconfig.LoadJSON[*AppConfig],
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 ```
@@ -170,10 +173,14 @@ type Config struct {
     Port        int    `json:"port" env:"PORT"`
 }
 
-// LoadEnvJSON first loads JSON, then overrides with env vars
+// Environment-variable overrides live in the separate loadenv submodule:
+//   import "github.com/ungerik/go-dynconfig/loadenv"
+//
+// loadenv.LoadEnvJSON first loads JSON, then overrides with env vars
 config := dynconfig.MustLoadAndWatch(
     "config.json",
-    dynconfig.LoadEnvJSON[*Config],
+    loadenv.LoadEnvJSON[*Config],
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 ```
@@ -207,6 +214,7 @@ type ServerConfig struct {
 config := dynconfig.MustLoadAndWatch(
     "config.xml",
     dynconfig.LoadXML[*ServerConfig],
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 ```
@@ -223,9 +231,12 @@ Example `config.xml`:
 #### XML with Environment Variables
 
 ```go
+// loadenv.LoadEnvXML lives in the separate loadenv submodule:
+//   import "github.com/ungerik/go-dynconfig/loadenv"
 config := dynconfig.MustLoadAndWatch(
     "config.xml",
-    dynconfig.LoadEnvXML[*ServerConfig], // Merges env vars
+    loadenv.LoadEnvXML[*ServerConfig], // Merges env vars
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 ```
@@ -239,6 +250,7 @@ config := dynconfig.MustLoadAndWatch(
 version := dynconfig.MustLoadAndWatch(
     "VERSION",
     dynconfig.LoadStringTrimSpace,
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 
@@ -252,6 +264,7 @@ fmt.Println("Version:", version.Get()) // Version: 1.2.3
 allowedIPs := dynconfig.MustLoadAndWatch(
     "allowed-ips.txt",
     dynconfig.LoadStringLinesTrimSpace,
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 
@@ -274,6 +287,7 @@ Example `allowed-ips.txt`:
 bannedWords := dynconfig.MustLoadAndWatch(
     "banned-words.txt",
     dynconfig.LoadStringLineSetTrimSpace,
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 
@@ -294,6 +308,7 @@ type EmailSet map[Email]struct{}
 emailBlacklist := dynconfig.MustLoadAndWatch(
     "blacklist.txt",
     dynconfig.LoadStringLineSetTrimSpaceT[Email],
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 
@@ -331,11 +346,11 @@ type Config struct {
 Override the default parser:
 
 ```go
-import "github.com/ungerik/go-dynconfig"
+import "github.com/ungerik/go-dynconfig/loadenv"
 
 func init() {
     // Use custom environment parser
-    dynconfig.ParseEnv = func(dest any) error {
+    loadenv.ParseEnv = func(dest any) error {
         // Your custom parsing logic
         return myCustomParser(dest)
     }
@@ -449,6 +464,7 @@ if err != nil {
 config := dynconfig.MustLoadAndWatch(
     "config.json",
     dynconfig.LoadJSON[*Config],
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 ```
@@ -476,6 +492,7 @@ func loadCustomFormat(file fs.File) (*Config, error) {
 config := dynconfig.MustLoadAndWatch(
     "config.custom",
     loadCustomFormat,
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 ```
@@ -489,6 +506,7 @@ Fine-grained control over loading and watching:
 loader := dynconfig.NewLoader(
     "config.json",
     dynconfig.LoadJSON[*Config],
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 
@@ -517,6 +535,173 @@ if err := loader.Unwatch(); err != nil {
     log.Fatal(err)
 }
 ```
+
+### Atomic Mutation (`Mutate` and `Set`)
+
+Two methods write the configuration file back:
+
+- **`Mutate(reload, fn)`** does a read-modify-write: it hands your callback the
+  current configuration and writes back what the callback returns. Use it when
+  the new value depends on the current contents (incrementing a counter, adding
+  to a set). With `reload` false it reuses the cached config when one is valid;
+  with `reload` true it always reads the file first, for when you can't rely on
+  the cache reflecting the latest on-disk value.
+- **`Set`** writes a complete value you already hold, replacing the file's
+  contents. It does not read or call back.
+
+For files on the local file system both acquire an **exclusive
+operating-system lock** (`flock`) on the file's parent directory and hold it for
+the whole write
+cycle. The new content is written to a temporary file in the same directory and
+then **atomically renamed** over the target, so a reader (or another process)
+never observes a half-written file and a crash leaves the original intact. A
+second process that writes a file in that directory through `Mutate` or `Set`
+blocks until the first one finishes, so concurrent processes cannot interleave
+their writes. Within the process the loader's mutex additionally serializes both
+against `Load`, `Get`, and `Invalidate`.
+
+The write-back function is passed to the constructor right after the `load`
+function; the package ships `SaveJSON[T]` and `SaveXML[T]` as factories that
+return the write counterparts to `LoadJSON` and `LoadXML` (pass optional indent
+strings, e.g. `SaveJSON[Counter]("  ")`). `Mutate` reuses the cached
+configuration when one is valid and only re-reads from disk when the cache is
+empty or has been invalidated (the same caching `Get` and `Load` use); `Set`
+never reads.
+
+```go
+type Counter struct {
+    Value int `json:"value"`
+}
+
+loader := dynconfig.MustLoadAndWatch(
+    "counter.json",
+    dynconfig.LoadJSON[Counter],
+    dynconfig.SaveJSON[Counter]("  "),
+    nil, nil, nil,
+)
+
+// Read-modify-write: increment the counter (reload=false uses the cache)
+err := loader.Mutate(false, func(c Counter) (Counter, error) {
+    c.Value++
+    return c, nil
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+// Direct write: replace the whole value
+err = loader.Set(Counter{Value: 0})
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+The `Mutate` callback receives the current configuration by value and returns the
+new value to write. If it returns an error, nothing is written. A failed save is
+likewise discarded before the rename, so the file is never left partially
+written. On success the loader's cache is updated to the new value, and—if the
+file is being watched—the write also triggers the normal invalidation.
+
+Neither `Mutate` nor `Set` applies the `onLoad` callback. `Mutate` assumes
+`onLoad` does not modify the value, so the value handed to the callback is the
+same one `Get` returns and the result is cached as-is. If you only use `onLoad`
+to log loads, that logging is unnecessary here: do it inside the `Mutate`
+callback.
+
+Any format works by supplying a custom save function to the constructor:
+
+```go
+loader := dynconfig.MustLoadAndWatch(
+    "config.json",
+    dynconfig.LoadJSON[Config],
+    func(f fs.File, c Config) error {
+        return f.WriteJSON(context.Background(), c)
+    },
+    nil, nil, nil,
+)
+```
+
+#### How-to: atomic updates in practice
+
+A common use is maintaining a set (allowlist, blocklist, feature flags) stored as
+a line-separated text file. `LoadStringLineSet` / `SaveStringLineSet` map the file
+to a `map[string]struct{}`, so a mutation is just adding and removing keys:
+
+```go
+loader := dynconfig.NewLoader(
+    "allowlist.txt",
+    dynconfig.LoadStringLineSet,
+    dynconfig.SaveStringLineSet(),
+    nil, nil, nil,
+)
+
+err := loader.Mutate(false, func(set map[string]struct{}) (map[string]struct{}, error) {
+    set["new.example.com"] = struct{}{} // add a member
+    delete(set, "old.example.com")      // remove a member
+    return set, nil
+})
+```
+
+**Gotchas**
+
+- **`Mutate` needs an existing file; `Set` can create one.** `Mutate` reads
+  before it mutates, so a missing file returns a read error. `Set` does not read,
+  so it creates the file if absent (the parent directory must exist).
+- **The `Mutate` callback must return the new value.** It receives the config by
+  value and returns the value to write; returning a non-nil error writes nothing.
+- **The `Mutate` callback runs under the lock.** Keep it a fast, in-memory
+  transform. Slow work inside it (network calls, disk I/O, blocking) holds the
+  directory lock the whole time, stalling other processes' `Mutate`/`Set` on any
+  file in that directory and every in-process loader call. Do expensive work
+  before calling `Mutate`.
+- **`reload` controls cache vs fresh read.** `Mutate(false, ...)` reuses the
+  cached config when valid, so to be sure it sees another process's write either
+  pass `reload` true, run a watcher (which invalidates the cache when the file
+  changes), or call `Invalidate()` first. `Mutate(true, ...)` always reads the
+  file first (under the same lock), so it never acts on a stale cache.
+- **Same-directory calls serialize.** The lock is on the parent directory, so
+  `Mutate`/`Set` on two different files in the same directory block one on the
+  other. Keep independently updated configs in separate directories if that
+  matters.
+- **Non-local or non-Unix is best-effort.** On remote or virtual go-fs file
+  systems, or platforms without `flock`, both fall back to an in-place overwrite
+  with no OS lock or atomic rename: safe within the process (mutex), not across
+  processes.
+
+#### Explanation: why a directory lock and an atomic rename
+
+Three things can go wrong when several processes update the same config file:
+
+- **Lost updates** — two processes read value `5`, both write `6`, one increment vanishes.
+- **Torn reads** — a reader sees a half-written file mid-save and fails to parse it.
+- **Crash corruption** — a process dies mid-write, leaving a truncated file.
+
+On a local file system the lock and rename close all three:
+
+- An exclusive `flock` held for the whole write cycle serializes writers, so a
+  `Mutate` that reads fresh and a concurrent writer can't lose each other's
+  updates. (Because `Mutate` may reuse a cached value, lost-update avoidance also
+  needs the cache to be fresh, hence the watcher / `Invalidate()` note above.)
+- Writing to a temp file and `rename`-ing it over the target is atomic, so a
+  reader always sees either the old file or the new one, never a partial one, and
+  a crash leaves the original intact.
+
+The lock is on the **parent directory**, not the file, because the atomic rename
+replaces the file's inode. A lock held on the old inode would stop excluding a
+process that opened the new one, and lost updates would creep back in. The
+directory inode is stable, so it is a sound lock target. The cost is that
+`Mutate`/`Set` calls on different files in the same directory serialize against
+each other.
+
+| Guarantee          | Local + Unix    | Other (fallback)  |
+| ------------------ | --------------- | ----------------- |
+| Serialized writes  | yes             | in-process only   |
+| No torn reads      | yes             | no                |
+| Crash-safe write   | yes             | no                |
+
+The lock is **advisory**: it only excludes other processes that also go through
+`Mutate`/`Set`. A writer that ignores the lock, or edits the file by hand, is not
+blocked.
 
 ### Configuration Composition
 
@@ -557,6 +742,7 @@ func loadComposedConfig(file fs.File) (*AppConfig, error) {
 config := dynconfig.MustLoadAndWatch(
     "app.json",
     loadComposedConfig,
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 ```
@@ -697,7 +883,8 @@ type Config struct {
 
 config := dynconfig.MustLoadAndWatch(
     "config.json",
-    dynconfig.LoadEnvJSON[*Config], // Merges env vars
+    loadenv.LoadEnvJSON[*Config], // Merges env vars (from the loadenv submodule)
+    nil, // save (write-back function used by Set)
     nil, nil, nil,
 )
 ```
@@ -707,7 +894,7 @@ config := dynconfig.MustLoadAndWatch(
 ### Core Types
 
 - `Loader[T]` - Main configuration loader with file watching
-- `LoadAndWatch[T](file, load, onLoad, onError, onInvalidate) (*Loader[T], error)` - Create and start loader
+- `LoadAndWatch[T](file, load, save, onLoad, onError, onInvalidate) (*Loader[T], error)` - Create and start loader
 - `MustLoadAndWatch[T](...) *Loader[T]` - Like LoadAndWatch but panics on error
 - `NewLoader[T](...) *Loader[T]` - Create loader without loading
 
@@ -717,6 +904,8 @@ config := dynconfig.MustLoadAndWatch(
 - `Load() (T, error)` - Load config and return any error
 - `Loaded() bool` - Check if config is loaded
 - `Invalidate()` - Mark config as needing reload
+- `Mutate(reload bool, mutate func(T) (T, error)) error` - Read-modify-write under an exclusive directory lock with an atomic rename (local files); with `reload` false uses the cached config when valid, with `reload` true always reads fresh from disk first; the `save` function is passed to the constructor
+- `Set(config T) error` - Write a complete config value directly under the same lock and atomic rename (no read, no callback)
 - `Watch() error` - Start watching file
 - `Unwatch() error` - Stop watching file
 - `File() fs.File` - Get watched file path
@@ -724,12 +913,12 @@ config := dynconfig.MustLoadAndWatch(
 ### JSON Loaders
 
 - `LoadJSON[T](file) (T, error)` - Load JSON file
-- `LoadEnvJSON[T](file) (T, error)` - Load JSON and merge env vars
+- `SaveJSON[T](indent ...string) func(file, config) error` - Returns a JSON write-back function (counterpart to LoadJSON)
 
 ### XML Loaders
 
 - `LoadXML[T](file) (T, error)` - Load XML file
-- `LoadEnvXML[T](file) (T, error)` - Load XML and merge env vars
+- `SaveXML[T](indent ...string) func(file, config) error` - Returns an XML write-back function (counterpart to LoadXML)
 
 ### Text Loaders
 
@@ -742,9 +931,19 @@ config := dynconfig.MustLoadAndWatch(
 
 All text loaders have generic `T` variants (e.g., `LoadStringT[T]`, `LoadStringLinesT[T]`) for custom string types.
 
-### Environment Variables
+### Environment Variables (`loadenv` submodule)
 
-- `ParseEnv(dest any) error` - Parse env vars into struct (customizable)
+Environment-variable support lives in the separate module
+`github.com/ungerik/go-dynconfig/loadenv`, so the core module does not depend on
+`caarlos0/env/v7`. Import it only when you need env overrides:
+
+```go
+import "github.com/ungerik/go-dynconfig/loadenv"
+```
+
+- `loadenv.LoadEnvJSON[T](file) (T, error)` - Load JSON and merge env vars
+- `loadenv.LoadEnvXML[T](file) (T, error)` - Load XML and merge env vars
+- `loadenv.ParseEnv(dest any) error` - Parse env vars into struct (customizable)
 
 ## Examples
 
