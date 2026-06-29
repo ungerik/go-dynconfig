@@ -664,6 +664,14 @@ func (l *Loader[T]) Get() T {
 //     in-place overwrite with the save function, without an OS lock or atomic
 //     rename, protected only by the Loader's in-process mutex (so it is not
 //     safe against other processes mutating the same file).
+//   - The atomic write path needs write permission on the parent directory, not
+//     just on the file, because it locks the directory and creates a temporary
+//     file there. A file that is writable in a directory you cannot write to
+//     therefore fails on the atomic path, where a plain overwrite would succeed.
+//   - When the file is a symbolic link, the atomic rename replaces the link
+//     itself with a regular file (carrying the link target's permission bits),
+//     rather than writing through it to the target. The non-local and
+//     no-flock fallback paths overwrite in place and so follow the link instead.
 //   - The lock is advisory: it only excludes other processes that cooperate by
 //     locking the same directory (as Mutate and Set do). It does not protect
 //     against writers that ignore the lock.
