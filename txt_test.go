@@ -1,6 +1,8 @@
 package dynconfig
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -518,6 +520,155 @@ func TestResolveLineSeparator(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := resolveLineSeparator(tt.sep); got != tt.want {
 				t.Errorf("resolveLineSeparator(%q) = %q, want %q", tt.sep, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestSaveContextVariants verifies that every text Save…Context variant writes
+// the same content as its context.Background() counterpart, and that it fails
+// with the context's error and leaves the file unchanged once the context is
+// canceled.
+func TestSaveContextVariants(t *testing.T) {
+	lines := []string{"  beta  ", "alpha", ""}
+	set := map[string]struct{}{"  beta  ": {}, "alpha": {}, "": {}}
+	hostLines := []host{"  beta  ", "alpha", ""}
+	hostSet := map[host]struct{}{"  beta  ": {}, "alpha": {}, "": {}}
+
+	tests := []struct {
+		name string
+		save func(ctx context.Context, file fs.File) error
+		want string
+	}{
+		{"SaveStringContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringContext(ctx)(file, " hello ")
+		}, " hello "},
+		{"SaveStringTContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringTContext[host](ctx)(file, " hello ")
+		}, " hello "},
+		{"SaveStringTrimSpaceContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringTrimSpaceContext(ctx)(file, " hello ")
+		}, "hello"},
+		{"SaveStringTrimSpaceTContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringTrimSpaceTContext[host](ctx)(file, " hello ")
+		}, "hello"},
+		{"SaveStringLinesContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringLinesContext(ctx, ",")(file, lines)
+		}, "  beta  ,alpha,"},
+		{"SaveStringLinesTContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringLinesTContext[host](ctx, ",")(file, hostLines)
+		}, "  beta  ,alpha,"},
+		{"SaveStringLinesTrimSpaceContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringLinesTrimSpaceContext(ctx, ",")(file, lines)
+		}, "beta,alpha"},
+		{"SaveStringLinesTrimSpaceTContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringLinesTrimSpaceTContext[host](ctx, ",")(file, hostLines)
+		}, "beta,alpha"},
+		{"SaveStringLineSetContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringLineSetContext(ctx, ",")(file, set)
+		}, ",  beta  ,alpha"},
+		{"SaveStringLineSetTContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringLineSetTContext[host](ctx, ",")(file, hostSet)
+		}, ",  beta  ,alpha"},
+		{"SaveStringLineSetTrimSpaceContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringLineSetTrimSpaceContext(ctx, ",")(file, set)
+		}, "alpha,beta"},
+		{"SaveStringLineSetTrimSpaceTContext", func(ctx context.Context, file fs.File) error {
+			return SaveStringLineSetTrimSpaceTContext[host](ctx, ",")(file, hostSet)
+		}, "alpha,beta"},
+	}
+
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := memFile(t, "data.txt", "old")
+
+			err := tt.save(canceled, file)
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("canceled context: got error %v, want context.Canceled", err)
+			}
+			if got := readBack(t, file); got != "old" {
+				t.Fatalf("canceled context changed file to %q", got)
+			}
+
+			err = tt.save(t.Context(), file)
+			if err != nil {
+				t.Fatalf("%s: %s", tt.name, err)
+			}
+			if got := readBack(t, file); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestLoadContextVariants verifies that every text Load…Context variant parses
+// the content like its context.Background() counterpart and fails with the
+// context's error once the context is canceled.
+func TestLoadContextVariants(t *testing.T) {
+	const content = " b \na\n"
+
+	tests := []struct {
+		name string
+		load func(ctx context.Context, file fs.File) (any, error)
+		want any
+	}{
+		{"LoadStringContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringContext(ctx)(file)
+		}, content},
+		{"LoadStringTContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringTContext[host](ctx)(file)
+		}, host(content)},
+		{"LoadStringTrimSpaceContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringTrimSpaceContext(ctx)(file)
+		}, "b \na"},
+		{"LoadStringTrimSpaceTContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringTrimSpaceTContext[host](ctx)(file)
+		}, host("b \na")},
+		{"LoadStringLinesContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringLinesContext(ctx)(file)
+		}, []string{" b ", "a"}},
+		{"LoadStringLinesTContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringLinesTContext[host](ctx)(file)
+		}, []host{" b ", "a"}},
+		{"LoadStringLinesTrimSpaceContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringLinesTrimSpaceContext(ctx)(file)
+		}, []string{"b", "a"}},
+		{"LoadStringLinesTrimSpaceTContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringLinesTrimSpaceTContext[host](ctx)(file)
+		}, []host{"b", "a"}},
+		{"LoadStringLineSetContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringLineSetContext(ctx)(file)
+		}, map[string]struct{}{" b ": {}, "a": {}}},
+		{"LoadStringLineSetTContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringLineSetTContext[host](ctx)(file)
+		}, map[host]struct{}{" b ": {}, "a": {}}},
+		{"LoadStringLineSetTrimSpaceContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringLineSetTrimSpaceContext(ctx)(file)
+		}, map[string]struct{}{"b": {}, "a": {}}},
+		{"LoadStringLineSetTrimSpaceTContext", func(ctx context.Context, file fs.File) (any, error) {
+			return LoadStringLineSetTrimSpaceTContext[host](ctx)(file)
+		}, map[host]struct{}{"b": {}, "a": {}}},
+	}
+
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := memFile(t, "data.txt", content)
+
+			got, err := tt.load(t.Context(), file)
+			if err != nil {
+				t.Fatalf("%s: %s", tt.name, err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got %#v, want %#v", got, tt.want)
+			}
+
+			_, err = tt.load(canceled, file)
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("canceled context: got error %v, want context.Canceled", err)
 			}
 		})
 	}

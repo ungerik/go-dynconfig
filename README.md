@@ -563,10 +563,15 @@ against `Load`, `Get`, and `Invalidate`.
 The write-back function is passed to the constructor right after the `load`
 function; the package ships `SaveJSON[T]` and `SaveXML[T]` as factories that
 return the write counterparts to `LoadJSON` and `LoadXML` (pass optional indent
-strings, e.g. `SaveJSON[Counter]("  ")`). `Mutate` reuses the cached
-configuration when one is valid and only re-reads from disk when the cache is
-empty or has been invalidated (the same caching `Get` and `Load` use); `Set`
-never reads.
+strings, e.g. `SaveJSON[Counter]("  ")`). Every `Load…` and `Save…` function
+has a `…Context` factory that takes a `context.Context` as its first argument and
+returns a load or save function that uses it instead of `context.Background()`,
+e.g. `LoadJSONContext[Counter](ctx)` and `SaveJSONContext[Counter](ctx, "  ")`.
+The returned functions use that context for every later reload and write, so
+once it is canceled reloads, `Mutate`, and `Set` fail. `Mutate` reuses the
+cached configuration when one is valid and only re-reads from disk when the
+cache is empty or has been invalidated (the same caching `Get` and `Load` use);
+`Set` never reads.
 
 ```go
 type Counter struct {
@@ -913,12 +918,16 @@ config := dynconfig.MustLoadAndWatch(
 ### JSON Loaders
 
 - `LoadJSON[T](file) (T, error)` - Load JSON file
+- `LoadJSONContext[T](ctx) func(file) (T, error)` - Returns a load function like LoadJSON that reads with ctx
 - `SaveJSON[T](indent ...string) func(file, config) error` - Returns a JSON write-back function (counterpart to LoadJSON)
+- `SaveJSONContext[T](ctx, indent ...string) func(file, config) error` - Returns a save function like SaveJSON that writes with ctx
 
 ### XML Loaders
 
 - `LoadXML[T](file) (T, error)` - Load XML file
+- `LoadXMLContext[T](ctx) func(file) (T, error)` - Returns a load function like LoadXML that reads with ctx
 - `SaveXML[T](indent ...string) func(file, config) error` - Returns an XML write-back function (counterpart to LoadXML)
+- `SaveXMLContext[T](ctx, indent ...string) func(file, config) error` - Returns a save function like SaveXML that writes with ctx
 
 ### Text Loaders
 
@@ -930,6 +939,13 @@ config := dynconfig.MustLoadAndWatch(
 - `LoadStringLineSetTrimSpace(file) (map[string]struct{}, error)` - Load set, trim lines
 
 All text loaders have generic `T` variants (e.g., `LoadStringT[T]`, `LoadStringLinesT[T]`) for custom string types.
+
+Every text loader has a `Save…` counterpart (e.g., `SaveString(file, s)`,
+`SaveStringLines(sep ...string)`), and every `Load…` and `Save…` function has a
+`…Context` factory that takes a `context.Context` first and returns a load or
+save function using it (e.g., `LoadStringContext(ctx)`,
+`LoadStringLinesTContext[T](ctx)`, `SaveStringContext(ctx)`,
+`SaveStringLinesContext(ctx, sep...)`).
 
 ### Environment Variables (`loadenv` submodule)
 
@@ -943,6 +959,7 @@ import "github.com/ungerik/go-dynconfig/loadenv"
 
 - `loadenv.LoadEnvJSON[T](file) (T, error)` - Load JSON and merge env vars
 - `loadenv.LoadEnvXML[T](file) (T, error)` - Load XML and merge env vars
+- `loadenv.LoadEnvJSONContext[T](ctx)`, `loadenv.LoadEnvXMLContext[T](ctx)` - Return load functions like LoadEnvJSON and LoadEnvXML that read with ctx
 - `loadenv.ParseEnv(dest any) error` - Parse env vars into struct (customizable)
 
 ## Examples

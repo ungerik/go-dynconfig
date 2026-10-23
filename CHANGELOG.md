@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Go module versioning](https://go.dev/doc/modules/version-numbers)
 (`vMAJOR.MINOR.PATCH`).
 
+## [Unreleased]
+
+### Added
+
+- `…Context` factories for every load and save function (`LoadJSONContext`,
+  `LoadStringLinesTContext`, `SaveJSONContext`, `SaveStringContext`,
+  `SaveStringLinesContext`, …, and `loadenv.LoadEnvJSONContext` /
+  `LoadEnvXMLContext`). They take a `context.Context` as their first argument
+  and return a load or save function for `NewLoader`, `LoadAndWatch`, and
+  `MustLoadAndWatch` that uses it instead of `context.Background()` for every
+  reload, `Mutate`, and `Set`.
+
+### Changed
+
+- Bumped the Go directive to 1.26, required by `ungerik/go-fs` v1.0.0-beta.2;
+  updated `golang.org/x/sys` to v0.49.0. `testify` is no longer an indirect
+  dependency.
+- `SaveJSON` and `SaveXML` called with only empty indent strings (`SaveJSON("")`)
+  now write compact output, like calling them without arguments; before they
+  wrote line breaks without indentation.
+
 ## [v1.0.0] - 2026-06-29
 
 First tagged release. Changes below are relative to the last untagged commit on `main`.

@@ -21,7 +21,7 @@ type counter struct {
 func writeTempJSON(t *testing.T, name string, content string) fs.File {
 	t.Helper()
 	file := fs.File(filepath.Join(t.TempDir(), name))
-	err := file.WriteAllString(content)
+	err := file.WriteAllString(t.Context(), content)
 	if err != nil {
 		t.Fatalf("write temp file: %s", err)
 	}
@@ -89,7 +89,7 @@ func TestMutate_UsesCachedConfigWhenValid(t *testing.T) {
 	}
 
 	// Change the file behind the loader's back (no watcher, cache stays valid).
-	err := file.WriteAllString(`{"value": 100}`)
+	err := file.WriteAllString(t.Context(), `{"value": 100}`)
 	if err != nil {
 		t.Fatalf("overwrite file: %s", err)
 	}
@@ -126,7 +126,7 @@ func TestMutate_ReloadsAfterInvalidate(t *testing.T) {
 		t.Fatalf("initial value = %d, want 1", got)
 	}
 
-	err := file.WriteAllString(`{"value": 100}`)
+	err := file.WriteAllString(t.Context(), `{"value": 100}`)
 	if err != nil {
 		t.Fatalf("overwrite file: %s", err)
 	}
@@ -307,7 +307,7 @@ func TestMutate_SaveErrorLeavesFileUnchanged(t *testing.T) {
 	// Write garbage before failing; on the atomic path it goes to the temp file
 	// and is discarded, so the original must survive unchanged.
 	badSave := func(f fs.File, _ counter) error {
-		_ = f.WriteAllString("partial garbage")
+		_ = f.WriteAllString(t.Context(), "partial garbage")
 		return wantErr
 	}
 	loader := NewLoader(file, LoadJSON[counter], badSave, nil, nil, nil)
@@ -425,7 +425,7 @@ func TestMutate_ReloadReadsFreshContent(t *testing.T) {
 	}
 
 	// Change the file behind the loader's back (no watcher, cache stays valid).
-	err := file.WriteAllString(`{"value": 100}`)
+	err := file.WriteAllString(t.Context(), `{"value": 100}`)
 	if err != nil {
 		t.Fatalf("overwrite file: %s", err)
 	}
@@ -541,6 +541,71 @@ func TestSet_NonLocalFileSystem(t *testing.T) {
 	}
 }
 
+// TestSet_CanceledSaveContext verifies that a save function created with a
+// canceled context makes Set fail on the atomic write path, leaving the file,
+// the cache and the directory unchanged.
+func TestSet_CanceledSaveContext(t *testing.T) {
+	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	loader := NewLoader(file, LoadJSON[counter], SaveJSONContext[counter](ctx), nil, nil, nil)
+
+	err := loader.Set(counter{Value: 2})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("got error %v, want context.Canceled", err)
+	}
+
+	if got := loader.Get().Value; got != 1 {
+		t.Errorf("cached value = %d, want 1", got)
+	}
+	content, err := file.ReadAllString(t.Context())
+	if err != nil {
+		t.Fatalf("ReadAllString: %s", err)
+	}
+	if content != `{"value": 1}` {
+		t.Errorf("file changed to %q", content)
+	}
+	assertOnlyFile(t, file.Dir().LocalPath(), "counter.json")
+}
+
+// TestLoader_ContextFactories verifies a Loader built from the load and save
+// functions returned by LoadJSONContext and SaveJSONContext: it reads and
+// writes while ctx is live, and once ctx is canceled every reload and write
+// fails with the context's error and leaves the file unchanged.
+func TestLoader_ContextFactories(t *testing.T) {
+	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
+	ctx, cancel := context.WithCancel(t.Context())
+	loader := NewLoader(file, LoadJSONContext[counter](ctx), SaveJSONContext[counter](ctx), nil, nil, nil)
+
+	err := loader.Mutate(false, func(c counter) (counter, error) {
+		c.Value++
+		return c, nil
+	})
+	if err != nil {
+		t.Fatalf("Mutate: %s", err)
+	}
+
+	cancel()
+	err = loader.Set(counter{Value: 99})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Set after cancel: got error %v, want context.Canceled", err)
+	}
+	loader.Invalidate()
+	_, err = loader.Load()
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Load after cancel: got error %v, want context.Canceled", err)
+	}
+
+	var onDisk counter
+	err = file.ReadJSON(t.Context(), &onDisk)
+	if err != nil {
+		t.Fatalf("ReadJSON: %s", err)
+	}
+	if onDisk.Value != 2 {
+		t.Errorf("on-disk value = %d, want 2 (from Mutate before cancel)", onDisk.Value)
+	}
+}
+
 // ExampleLoader_Mutate demonstrates an atomic read-modify-write of a string set
 // stored as a line-separated text file. The configuration type is
 // map[string]struct{}, loaded and saved with the package's LoadStringLineSet
@@ -553,7 +618,7 @@ func ExampleLoader_Mutate() {
 	defer os.RemoveAll(dir)
 
 	file := fs.File(filepath.Join(dir, "tags.txt"))
-	err = file.WriteAllString("alpha\nbeta")
+	err = file.WriteAllString(context.Background(), "alpha\nbeta")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -575,7 +640,7 @@ func ExampleLoader_Mutate() {
 		log.Fatal(err)
 	}
 
-	content, err := file.ReadAllString()
+	content, err := file.ReadAllString(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
