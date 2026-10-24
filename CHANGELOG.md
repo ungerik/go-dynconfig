@@ -8,15 +8,22 @@ and this project adheres to [Go module versioning](https://go.dev/doc/modules/ve
 
 ## [Unreleased]
 
+## [v1.1.0-beta.1] - 2026-10-24
+
+### Added
+
+- `SaveJSONIndent[T](indent string)` and `SaveXMLIndent[T](indent string)` return
+  save functions with configurable indentation. An empty string writes compact
+  output.
+
 ### Changed
 
-- Bumped the Go directive to 1.26, required by `ungerik/go-fs` v1.0.0-beta.2;
-  updated `golang.org/x/sys` to v0.49.0. `testify` is no longer an indirect
-  dependency.
-- `SaveJSON[T]` and `SaveXML[T]` are now direct save functions that write compact
-  output and can be passed to `NewLoader` without calling a factory. Use the new
-  `SaveJSONIndent[T]` and `SaveXMLIndent[T]` factories for indented output; an
-  empty indent string produces compact output.
+- **Breaking:** `SaveJSON[T]` and `SaveXML[T]` now write compact output directly
+  and can be passed to `NewLoader` without calling a factory. Call the new
+  `SaveJSONIndent[T]` or `SaveXMLIndent[T]` factory for indented output.
+- Raised the minimum Go version to 1.26 for `ungerik/go-fs` v1.0.0-beta.2 and
+  updated `golang.org/x/sys` to v0.49.0. The dependency update also removes
+  `testify` from the indirect dependencies.
 
 ## [v1.0.0] - 2026-06-29
 
