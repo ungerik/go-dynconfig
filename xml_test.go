@@ -55,3 +55,42 @@ func TestLoadXML_FileNotExist(t *testing.T) {
 		t.Error("expected error for missing file")
 	}
 }
+
+func TestSaveXML(t *testing.T) {
+	file := memFile(t, "config.xml", "old")
+	loader := NewLoader(file, LoadXML[xmlConfig], SaveXML[xmlConfig], nil, nil, nil)
+
+	err := loader.Set(xmlConfig{Host: "h", Port: 1})
+	if err != nil {
+		t.Fatalf("Set with SaveXML: %s", err)
+	}
+	want := xml.Header + "<config><host>h</host><port>1</port></config>"
+	if got := readBack(t, file); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSaveXMLIndent(t *testing.T) {
+	cfg := xmlConfig{Host: "h", Port: 1}
+	tests := []struct {
+		name   string
+		indent string
+		want   string
+	}{
+		{"empty indent is compact", "", xml.Header + "<config><host>h</host><port>1</port></config>"},
+		{"two-space indent", "  ", xml.Header + "<config>\n  <host>h</host>\n  <port>1</port>\n</config>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := memFile(t, "config.xml", "old")
+
+			err := SaveXMLIndent[xmlConfig](tt.indent)(file, cfg)
+			if err != nil {
+				t.Fatalf("SaveXMLIndent: %s", err)
+			}
+			if got := readBack(t, file); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

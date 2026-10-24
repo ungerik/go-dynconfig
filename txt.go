@@ -1,6 +1,7 @@
 package dynconfig
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"unsafe"
@@ -71,7 +72,7 @@ func LoadString(file fs.File) (string, error) {
 //	    return s + "!", nil
 //	})
 func SaveString(file fs.File, config string) error {
-	return file.WriteAllString(config)
+	return file.WriteAllString(context.Background(), config)
 }
 
 // LoadStringT loads the entire file content as a string of custom type T.
@@ -89,7 +90,7 @@ func SaveString(file fs.File, config string) error {
 //	}
 //	// key is of type APIKey
 func LoadStringT[T ~string](file fs.File) (T, error) {
-	str, err := file.ReadAllString()
+	str, err := file.ReadAllString(context.Background())
 	if err != nil {
 		return "", err
 	}
@@ -144,7 +145,7 @@ func LoadStringTrimSpace(file fs.File) (string, error) {
 //	    nil, nil, nil,
 //	)
 func SaveStringTrimSpace(file fs.File, config string) error {
-	return file.WriteAllString(strings.TrimSpace(config))
+	return file.WriteAllString(context.Background(), strings.TrimSpace(config))
 }
 
 // LoadStringTrimSpaceT loads the file content as a string type T with whitespace trimmed.
@@ -159,7 +160,7 @@ func SaveStringTrimSpace(file fs.File, config string) error {
 //	token, err := dynconfig.LoadStringTrimSpaceT[Token]("auth-token.txt")
 //	// token will be Token("secret123")
 func LoadStringTrimSpaceT[T ~string](file fs.File) (T, error) {
-	str, err := file.ReadAllString()
+	str, err := file.ReadAllString(context.Background())
 	if err != nil {
 		return "", err
 	}
@@ -202,7 +203,7 @@ func SaveStringTrimSpaceT[T ~string](file fs.File, config T) error {
 //	hosts, err := dynconfig.LoadStringLines("hosts.txt")
 //	// hosts = []string{"api.example.com", "db.example.com", "cache.example.com"}
 func LoadStringLines(file fs.File) ([]string, error) {
-	str, err := file.ReadAllString()
+	str, err := file.ReadAllString(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +246,7 @@ func SaveStringLines(sep ...string) func(file fs.File, config []string) error {
 		for i, line := range config {
 			lines[i] = sanitizeLine(line, separator)
 		}
-		return file.WriteAllString(strings.Join(lines, separator))
+		return file.WriteAllString(context.Background(), strings.Join(lines, separator))
 	}
 }
 
@@ -335,7 +336,7 @@ func SaveStringLinesTrimSpace(sep ...string) func(file fs.File, config []string)
 				lines = append(lines, s)
 			}
 		}
-		return file.WriteAllString(strings.Join(lines, separator))
+		return file.WriteAllString(context.Background(), strings.Join(lines, separator))
 	}
 }
 
@@ -355,7 +356,7 @@ func SaveStringLinesTrimSpace(sep ...string) func(file fs.File, config []string)
 //	emails, err := dynconfig.LoadStringLinesTrimSpaceT[Email]("emails.txt")
 //	// emails = []Email{"user@example.com", "admin@example.com"}
 func LoadStringLinesTrimSpaceT[T ~string](file fs.File) ([]T, error) {
-	str, err := file.ReadAllString()
+	str, err := file.ReadAllString(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -446,7 +447,7 @@ func SaveStringLineSet(sep ...string) func(file fs.File, config map[string]struc
 		}
 		slices.Sort(lines)
 		lines = slices.Compact(lines) // Drop duplicates that collide after sanitizing
-		return file.WriteAllString(strings.Join(lines, separator))
+		return file.WriteAllString(context.Background(), strings.Join(lines, separator))
 	}
 }
 
@@ -461,7 +462,7 @@ func SaveStringLineSet(sep ...string) func(file fs.File, config map[string]struc
 //	allowed, err := dynconfig.LoadStringLineSetT[Domain]("allowed-domains.txt")
 //	// Returns map[Domain]struct{}
 func LoadStringLineSetT[T ~string](file fs.File) (map[T]struct{}, error) {
-	str, err := file.ReadAllString()
+	str, err := file.ReadAllString(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -552,7 +553,7 @@ func SaveStringLineSetTrimSpace(sep ...string) func(file fs.File, config map[str
 		}
 		slices.Sort(lines)
 		lines = slices.Compact(lines) // Drop duplicates that collide after sanitizing and trimming
-		return file.WriteAllString(strings.Join(lines, separator))
+		return file.WriteAllString(context.Background(), strings.Join(lines, separator))
 	}
 }
 
@@ -572,7 +573,7 @@ func SaveStringLineSetTrimSpace(sep ...string) func(file fs.File, config map[str
 //	blocked, err := dynconfig.LoadStringLineSetTrimSpaceT[IPAddress]("blocked-ips.txt")
 //	// blocked = map[IPAddress]struct{}{"192.168.1.1": {}, "10.0.0.1": {}}
 func LoadStringLineSetTrimSpaceT[T ~string](file fs.File) (map[T]struct{}, error) {
-	str, err := file.ReadAllString()
+	str, err := file.ReadAllString(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -620,8 +621,7 @@ func SaveStringLineSetTrimSpaceT[T ~string](sep ...string) func(file fs.File, co
 
 // resolveLineSeparator returns the line separator to use when writing lines.
 // With no arguments it defaults to a single newline ("\n"), otherwise the
-// concatenated sep strings are used, mirroring how SaveJSON and SaveXML treat
-// their variadic indent arguments.
+// concatenated sep strings are used.
 func resolveLineSeparator(sep []string) string {
 	if len(sep) == 0 {
 		return "\n"

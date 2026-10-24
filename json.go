@@ -48,12 +48,9 @@ func LoadJSON[T any](file fs.File) (config T, err error) {
 	return config, nil
 }
 
-// SaveJSON returns a save function that marshals a configuration value of type T
-// to JSON and writes it to the file, overwriting any existing content.
-//
-// The optional indent arguments are passed to fs.File.WriteJSON: with no
-// arguments the JSON is written compact, otherwise the concatenated indent
-// strings are used for line indentation.
+// SaveJSON marshals a configuration value of type T to compact JSON and writes
+// it to the file, overwriting any existing content. Use SaveJSONIndent to
+// configure indentation.
 //
 // It is the write counterpart to LoadJSON and is designed to be passed as the
 // save function to the constructor for use by Loader.Mutate and Loader.Set.
@@ -71,15 +68,23 @@ func LoadJSON[T any](file fs.File) (config T, err error) {
 //	loader := dynconfig.MustLoadAndWatch(
 //	    "config.json",
 //	    dynconfig.LoadJSON[Config],
-//	    dynconfig.SaveJSON[Config]("  "),
+//	    dynconfig.SaveJSON[Config],
 //	    nil, nil, nil,
 //	)
 //	err := loader.Mutate(false, func(cfg Config) (Config, error) {
 //	    cfg.Port = 9090
 //	    return cfg, nil
 //	})
-func SaveJSON[T any](indent ...string) func(file fs.File, config T) error {
+func SaveJSON[T any](file fs.File, config T) error {
+	return file.WriteJSON(context.Background(), config)
+}
+
+// SaveJSONIndent returns a save function that writes JSON with the given indent.
+// An empty indent writes compact JSON.
+// The returned function can be passed to NewLoader, LoadAndWatch, or
+// MustLoadAndWatch when indented output is needed.
+func SaveJSONIndent[T any](indent string) func(file fs.File, config T) error {
 	return func(file fs.File, config T) error {
-		return file.WriteJSON(context.Background(), config, indent...)
+		return file.WriteJSONIndent(context.Background(), config, indent)
 	}
 }

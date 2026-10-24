@@ -1,6 +1,8 @@
 package dynconfig
 
-import "testing"
+import (
+	"testing"
+)
 
 type jsonConfig struct {
 	Host  string `json:"host"`
@@ -51,5 +53,40 @@ func TestLoadJSON_FileNotExist(t *testing.T) {
 	_, err := LoadJSON[jsonConfig](file)
 	if err == nil {
 		t.Error("expected error for missing file")
+	}
+}
+
+func TestSaveJSON(t *testing.T) {
+	file := memFile(t, "config.json", "old")
+	if err := SaveJSON[jsonConfig](file, jsonConfig{Host: "h", Port: 1}); err != nil {
+		t.Fatalf("SaveJSON: %s", err)
+	}
+	if got, want := readBack(t, file), `{"host":"h","port":1,"debug":false}`; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSaveJSONIndent(t *testing.T) {
+	cfg := jsonConfig{Host: "h", Port: 1}
+	tests := []struct {
+		name   string
+		indent string
+		want   string
+	}{
+		{"empty indent is compact", "", `{"host":"h","port":1,"debug":false}`},
+		{"two-space indent", "  ", "{\n  \"host\": \"h\",\n  \"port\": 1,\n  \"debug\": false\n}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := memFile(t, "config.json", "old")
+
+			err := SaveJSONIndent[jsonConfig](tt.indent)(file, cfg)
+			if err != nil {
+				t.Fatalf("SaveJSONIndent: %s", err)
+			}
+			if got := readBack(t, file); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

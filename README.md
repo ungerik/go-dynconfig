@@ -561,12 +561,12 @@ their writes. Within the process the loader's mutex additionally serializes both
 against `Load`, `Get`, and `Invalidate`.
 
 The write-back function is passed to the constructor right after the `load`
-function; the package ships `SaveJSON[T]` and `SaveXML[T]` as factories that
-return the write counterparts to `LoadJSON` and `LoadXML` (pass optional indent
-strings, e.g. `SaveJSON[Counter]("  ")`). `Mutate` reuses the cached
-configuration when one is valid and only re-reads from disk when the cache is
-empty or has been invalidated (the same caching `Get` and `Load` use); `Set`
-never reads.
+function. `SaveJSON[T]` and `SaveXML[T]` are direct write counterparts to
+`LoadJSON` and `LoadXML`; use `SaveJSONIndent[T]("  ")` or
+`SaveXMLIndent[T]("  ")` when indented output is needed. `Mutate` reuses the
+cached configuration when one is valid and only re-reads from disk when the
+cache is empty or has been invalidated (the same caching `Get` and `Load` use);
+`Set` never reads.
 
 ```go
 type Counter struct {
@@ -576,7 +576,7 @@ type Counter struct {
 loader := dynconfig.MustLoadAndWatch(
     "counter.json",
     dynconfig.LoadJSON[Counter],
-    dynconfig.SaveJSON[Counter]("  "),
+    dynconfig.SaveJSON[Counter],
     nil, nil, nil,
 )
 
@@ -913,12 +913,14 @@ config := dynconfig.MustLoadAndWatch(
 ### JSON Loaders
 
 - `LoadJSON[T](file) (T, error)` - Load JSON file
-- `SaveJSON[T](indent ...string) func(file, config) error` - Returns a JSON write-back function (counterpart to LoadJSON)
+- `SaveJSON[T](file, config) error` - Write compact JSON; pass directly to a loader constructor
+- `SaveJSONIndent[T](indent string) func(file, config) error` - Return a JSON save function with the given indent
 
 ### XML Loaders
 
 - `LoadXML[T](file) (T, error)` - Load XML file
-- `SaveXML[T](indent ...string) func(file, config) error` - Returns an XML write-back function (counterpart to LoadXML)
+- `SaveXML[T](file, config) error` - Write compact XML; pass directly to a loader constructor
+- `SaveXMLIndent[T](indent string) func(file, config) error` - Return an XML save function with the given indent
 
 ### Text Loaders
 
@@ -930,6 +932,9 @@ config := dynconfig.MustLoadAndWatch(
 - `LoadStringLineSetTrimSpace(file) (map[string]struct{}, error)` - Load set, trim lines
 
 All text loaders have generic `T` variants (e.g., `LoadStringT[T]`, `LoadStringLinesT[T]`) for custom string types.
+
+Every text loader has a `Save…` counterpart (e.g., `SaveString(file, s)`,
+`SaveStringLines(sep ...string)`).
 
 ### Environment Variables (`loadenv` submodule)
 

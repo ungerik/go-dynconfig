@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Go module versioning](https://go.dev/doc/modules/version-numbers)
 (`vMAJOR.MINOR.PATCH`).
 
+## [Unreleased]
+
+## [v1.1.0-beta.1] - 2026-10-24
+
+### Added
+
+- `SaveJSONIndent[T](indent string)` and `SaveXMLIndent[T](indent string)` return
+  save functions with configurable indentation. An empty string writes compact
+  output.
+
+### Changed
+
+- **Breaking:** `SaveJSON[T]` and `SaveXML[T]` now write compact output directly
+  and can be passed to `NewLoader` without calling a factory. Call the new
+  `SaveJSONIndent[T]` or `SaveXMLIndent[T]` factory for indented output.
+- Raised the minimum Go version to 1.26 for `ungerik/go-fs` v1.0.0-beta.2 and
+  updated `golang.org/x/sys` to v0.49.0. The dependency update also removes
+  `testify` from the indirect dependencies.
+
 ## [v1.0.0] - 2026-06-29
 
 First tagged release. Changes below are relative to the last untagged commit on `main`.

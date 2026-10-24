@@ -21,7 +21,7 @@ type counter struct {
 func writeTempJSON(t *testing.T, name string, content string) fs.File {
 	t.Helper()
 	file := fs.File(filepath.Join(t.TempDir(), name))
-	err := file.WriteAllString(content)
+	err := file.WriteAllString(t.Context(), content)
 	if err != nil {
 		t.Fatalf("write temp file: %s", err)
 	}
@@ -46,7 +46,7 @@ func assertOnlyFile(t *testing.T, dir, name string) {
 func TestMutate_ReadModifyWrite(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
 
-	loader, err := LoadAndWatch(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader, err := LoadAndWatch(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 	if err != nil {
 		t.Fatalf("LoadAndWatch: %s", err)
 	}
@@ -81,7 +81,7 @@ func TestMutate_ReadModifyWrite(t *testing.T) {
 func TestMutate_UsesCachedConfigWhenValid(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	// Prime the cache with the initial value (loaded == true).
 	if got := loader.Get().Value; got != 1 {
@@ -89,7 +89,7 @@ func TestMutate_UsesCachedConfigWhenValid(t *testing.T) {
 	}
 
 	// Change the file behind the loader's back (no watcher, cache stays valid).
-	err := file.WriteAllString(`{"value": 100}`)
+	err := file.WriteAllString(t.Context(), `{"value": 100}`)
 	if err != nil {
 		t.Fatalf("overwrite file: %s", err)
 	}
@@ -121,12 +121,12 @@ func TestMutate_UsesCachedConfigWhenValid(t *testing.T) {
 func TestMutate_ReloadsAfterInvalidate(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 	if got := loader.Get().Value; got != 1 { // prime cache
 		t.Fatalf("initial value = %d, want 1", got)
 	}
 
-	err := file.WriteAllString(`{"value": 100}`)
+	err := file.WriteAllString(t.Context(), `{"value": 100}`)
 	if err != nil {
 		t.Fatalf("overwrite file: %s", err)
 	}
@@ -149,7 +149,7 @@ func TestMutate_ReloadsAfterInvalidate(t *testing.T) {
 func TestMutate_MutateErrorLeavesFileUnchanged(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 7}`)
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	wantErr := errors.New("boom")
 	err := loader.Mutate(false, func(c counter) (counter, error) {
@@ -182,7 +182,7 @@ func TestMutate_NoSaveFuncSet(t *testing.T) {
 
 func TestMutate_NilArguments(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	err := loader.Mutate(false, nil)
 	if err == nil {
@@ -202,7 +202,7 @@ func TestMutate_DoesNotApplyOnLoad(t *testing.T) {
 	loader := NewLoader(
 		file,
 		LoadJSON[counter],
-		SaveJSON[counter](),
+		SaveJSON[counter],
 		func(c counter) counter { c.Value *= 2; return c }, // onLoad doubles
 		nil,
 		nil,
@@ -238,7 +238,7 @@ func TestMutate_NonLocalFileSystem(t *testing.T) {
 		t.Fatalf("memFile unexpectedly has a local path: %s", file.LocalPath())
 	}
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	err := loader.Mutate(false, func(c counter) (counter, error) {
 		c.Value += 10
@@ -267,7 +267,7 @@ func TestMutate_NonLocalFileSystem(t *testing.T) {
 // value must equal the number of increments with no lost updates.
 func TestMutate_ConcurrentGoroutines(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 0}`)
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	const n = 50
 	var wg sync.WaitGroup
@@ -307,7 +307,7 @@ func TestMutate_SaveErrorLeavesFileUnchanged(t *testing.T) {
 	// Write garbage before failing; on the atomic path it goes to the temp file
 	// and is discarded, so the original must survive unchanged.
 	badSave := func(f fs.File, _ counter) error {
-		_ = f.WriteAllString("partial garbage")
+		_ = f.WriteAllString(t.Context(), "partial garbage")
 		return wantErr
 	}
 	loader := NewLoader(file, LoadJSON[counter], badSave, nil, nil, nil)
@@ -345,7 +345,7 @@ func TestMutate_PreservesFileMode(t *testing.T) {
 		t.Fatalf("Chmod: %s", err)
 	}
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 	err := loader.Mutate(false, func(c counter) (counter, error) { c.Value++; return c, nil })
 	if err != nil {
 		t.Fatalf("Mutate: %s", err)
@@ -370,7 +370,7 @@ func TestMutate_PreservesFileMode(t *testing.T) {
 func TestMutate_MultiProcess(t *testing.T) {
 	if path := os.Getenv("DYNCONFIG_MUTATE_WORKER"); path != "" {
 		// Child process: increment once and exit before the parent body runs.
-		l := NewLoader(fs.File(path), LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+		l := NewLoader(fs.File(path), LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 		if err := l.Mutate(false, func(c counter) (counter, error) { c.Value++; return c, nil }); err != nil {
 			fmt.Fprintln(os.Stderr, "worker Mutate:", err)
 			os.Exit(1)
@@ -417,7 +417,7 @@ func TestMutate_MultiProcess(t *testing.T) {
 func TestMutate_ReloadReadsFreshContent(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	// Prime the cache with the initial value (loaded == true).
 	if got := loader.Get().Value; got != 1 {
@@ -425,7 +425,7 @@ func TestMutate_ReloadReadsFreshContent(t *testing.T) {
 	}
 
 	// Change the file behind the loader's back (no watcher, cache stays valid).
-	err := file.WriteAllString(`{"value": 100}`)
+	err := file.WriteAllString(t.Context(), `{"value": 100}`)
 	if err != nil {
 		t.Fatalf("overwrite file: %s", err)
 	}
@@ -456,7 +456,7 @@ func TestMutate_ReloadReadsFreshContent(t *testing.T) {
 // without reading or deriving from the current on-disk contents.
 func TestSet_WritesConfigDirectly(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	err := loader.Set(counter{Value: 99})
 	if err != nil {
@@ -481,7 +481,7 @@ func TestSet_WritesConfigDirectly(t *testing.T) {
 func TestSet_CreatesMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	file := fs.File(filepath.Join(dir, "new.json")) // not created yet
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	err := loader.Set(counter{Value: 5})
 	if err != nil {
@@ -521,7 +521,7 @@ func TestSet_NilLoader(t *testing.T) {
 // system by proceeding without an OS lock instead of returning an error.
 func TestSet_NonLocalFileSystem(t *testing.T) {
 	file := memFile(t, "counter.json", `{"value": 5}`)
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	err := loader.Set(counter{Value: 42})
 	if err != nil {
@@ -553,7 +553,7 @@ func ExampleLoader_Mutate() {
 	defer os.RemoveAll(dir)
 
 	file := fs.File(filepath.Join(dir, "tags.txt"))
-	err = file.WriteAllString("alpha\nbeta")
+	err = file.WriteAllString(context.Background(), "alpha\nbeta")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -575,7 +575,7 @@ func ExampleLoader_Mutate() {
 		log.Fatal(err)
 	}
 
-	content, err := file.ReadAllString()
+	content, err := file.ReadAllString(context.Background())
 	if err != nil {
 		log.Fatal(err)
 	}
