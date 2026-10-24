@@ -46,7 +46,7 @@ func assertOnlyFile(t *testing.T, dir, name string) {
 func TestMutate_ReadModifyWrite(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
 
-	loader, err := LoadAndWatch(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader, err := LoadAndWatch(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 	if err != nil {
 		t.Fatalf("LoadAndWatch: %s", err)
 	}
@@ -81,7 +81,7 @@ func TestMutate_ReadModifyWrite(t *testing.T) {
 func TestMutate_UsesCachedConfigWhenValid(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	// Prime the cache with the initial value (loaded == true).
 	if got := loader.Get().Value; got != 1 {
@@ -121,7 +121,7 @@ func TestMutate_UsesCachedConfigWhenValid(t *testing.T) {
 func TestMutate_ReloadsAfterInvalidate(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 	if got := loader.Get().Value; got != 1 { // prime cache
 		t.Fatalf("initial value = %d, want 1", got)
 	}
@@ -149,7 +149,7 @@ func TestMutate_ReloadsAfterInvalidate(t *testing.T) {
 func TestMutate_MutateErrorLeavesFileUnchanged(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 7}`)
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	wantErr := errors.New("boom")
 	err := loader.Mutate(false, func(c counter) (counter, error) {
@@ -182,7 +182,7 @@ func TestMutate_NoSaveFuncSet(t *testing.T) {
 
 func TestMutate_NilArguments(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	err := loader.Mutate(false, nil)
 	if err == nil {
@@ -202,7 +202,7 @@ func TestMutate_DoesNotApplyOnLoad(t *testing.T) {
 	loader := NewLoader(
 		file,
 		LoadJSON[counter],
-		SaveJSON[counter](),
+		SaveJSON[counter],
 		func(c counter) counter { c.Value *= 2; return c }, // onLoad doubles
 		nil,
 		nil,
@@ -238,7 +238,7 @@ func TestMutate_NonLocalFileSystem(t *testing.T) {
 		t.Fatalf("memFile unexpectedly has a local path: %s", file.LocalPath())
 	}
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	err := loader.Mutate(false, func(c counter) (counter, error) {
 		c.Value += 10
@@ -267,7 +267,7 @@ func TestMutate_NonLocalFileSystem(t *testing.T) {
 // value must equal the number of increments with no lost updates.
 func TestMutate_ConcurrentGoroutines(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 0}`)
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	const n = 50
 	var wg sync.WaitGroup
@@ -345,7 +345,7 @@ func TestMutate_PreservesFileMode(t *testing.T) {
 		t.Fatalf("Chmod: %s", err)
 	}
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 	err := loader.Mutate(false, func(c counter) (counter, error) { c.Value++; return c, nil })
 	if err != nil {
 		t.Fatalf("Mutate: %s", err)
@@ -370,7 +370,7 @@ func TestMutate_PreservesFileMode(t *testing.T) {
 func TestMutate_MultiProcess(t *testing.T) {
 	if path := os.Getenv("DYNCONFIG_MUTATE_WORKER"); path != "" {
 		// Child process: increment once and exit before the parent body runs.
-		l := NewLoader(fs.File(path), LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+		l := NewLoader(fs.File(path), LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 		if err := l.Mutate(false, func(c counter) (counter, error) { c.Value++; return c, nil }); err != nil {
 			fmt.Fprintln(os.Stderr, "worker Mutate:", err)
 			os.Exit(1)
@@ -417,7 +417,7 @@ func TestMutate_MultiProcess(t *testing.T) {
 func TestMutate_ReloadReadsFreshContent(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
 
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	// Prime the cache with the initial value (loaded == true).
 	if got := loader.Get().Value; got != 1 {
@@ -456,7 +456,7 @@ func TestMutate_ReloadReadsFreshContent(t *testing.T) {
 // without reading or deriving from the current on-disk contents.
 func TestSet_WritesConfigDirectly(t *testing.T) {
 	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	err := loader.Set(counter{Value: 99})
 	if err != nil {
@@ -481,7 +481,7 @@ func TestSet_WritesConfigDirectly(t *testing.T) {
 func TestSet_CreatesMissingFile(t *testing.T) {
 	dir := t.TempDir()
 	file := fs.File(filepath.Join(dir, "new.json")) // not created yet
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	err := loader.Set(counter{Value: 5})
 	if err != nil {
@@ -521,7 +521,7 @@ func TestSet_NilLoader(t *testing.T) {
 // system by proceeding without an OS lock instead of returning an error.
 func TestSet_NonLocalFileSystem(t *testing.T) {
 	file := memFile(t, "counter.json", `{"value": 5}`)
-	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter](), nil, nil, nil)
+	loader := NewLoader(file, LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
 
 	err := loader.Set(counter{Value: 42})
 	if err != nil {
@@ -538,71 +538,6 @@ func TestSet_NonLocalFileSystem(t *testing.T) {
 	}
 	if onDisk.Value != 42 {
 		t.Errorf("on-disk value = %d, want 42", onDisk.Value)
-	}
-}
-
-// TestSet_CanceledSaveContext verifies that a save function created with a
-// canceled context makes Set fail on the atomic write path, leaving the file,
-// the cache and the directory unchanged.
-func TestSet_CanceledSaveContext(t *testing.T) {
-	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	loader := NewLoader(file, LoadJSON[counter], SaveJSONContext[counter](ctx), nil, nil, nil)
-
-	err := loader.Set(counter{Value: 2})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("got error %v, want context.Canceled", err)
-	}
-
-	if got := loader.Get().Value; got != 1 {
-		t.Errorf("cached value = %d, want 1", got)
-	}
-	content, err := file.ReadAllString(t.Context())
-	if err != nil {
-		t.Fatalf("ReadAllString: %s", err)
-	}
-	if content != `{"value": 1}` {
-		t.Errorf("file changed to %q", content)
-	}
-	assertOnlyFile(t, file.Dir().LocalPath(), "counter.json")
-}
-
-// TestLoader_ContextFactories verifies a Loader built from the load and save
-// functions returned by LoadJSONContext and SaveJSONContext: it reads and
-// writes while ctx is live, and once ctx is canceled every reload and write
-// fails with the context's error and leaves the file unchanged.
-func TestLoader_ContextFactories(t *testing.T) {
-	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
-	ctx, cancel := context.WithCancel(t.Context())
-	loader := NewLoader(file, LoadJSONContext[counter](ctx), SaveJSONContext[counter](ctx), nil, nil, nil)
-
-	err := loader.Mutate(false, func(c counter) (counter, error) {
-		c.Value++
-		return c, nil
-	})
-	if err != nil {
-		t.Fatalf("Mutate: %s", err)
-	}
-
-	cancel()
-	err = loader.Set(counter{Value: 99})
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("Set after cancel: got error %v, want context.Canceled", err)
-	}
-	loader.Invalidate()
-	_, err = loader.Load()
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("Load after cancel: got error %v, want context.Canceled", err)
-	}
-
-	var onDisk counter
-	err = file.ReadJSON(t.Context(), &onDisk)
-	if err != nil {
-		t.Fatalf("ReadJSON: %s", err)
-	}
-	if onDisk.Value != 2 {
-		t.Errorf("on-disk value = %d, want 2 (from Mutate before cancel)", onDisk.Value)
 	}
 }
 

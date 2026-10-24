@@ -1,9 +1,7 @@
 package loadenv
 
 import (
-	"context"
 	"encoding/xml"
-	"errors"
 	"testing"
 )
 
@@ -49,27 +47,6 @@ func TestLoadEnvJSON_Invalid(t *testing.T) {
 	}
 }
 
-func TestLoadEnvJSONContext(t *testing.T) {
-	t.Setenv("DYNCONFIG_TEST_JSON_PORT", "9090")
-	file := memFile(t, "config.json", `{"host":"from-json","port":8080}`)
-
-	cfg, err := LoadEnvJSONContext[envJSONConfig](t.Context())(file)
-	if err != nil {
-		t.Fatalf("LoadEnvJSONContext: %s", err)
-	}
-	want := envJSONConfig{Host: "from-json", Port: 9090}
-	if cfg != want {
-		t.Errorf("got %+v, want %+v", cfg, want)
-	}
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	_, err = LoadEnvJSONContext[envJSONConfig](ctx)(file)
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("canceled context: got error %v, want context.Canceled", err)
-	}
-}
-
 type envXMLConfig struct {
 	XMLName xml.Name `xml:"config"`
 	Host    string   `xml:"host" env:"DYNCONFIG_TEST_XML_HOST"`
@@ -110,25 +87,5 @@ func TestLoadEnvXML_Invalid(t *testing.T) {
 	_, err := LoadEnvXML[envXMLConfig](file)
 	if err == nil {
 		t.Error("expected error for invalid XML int value")
-	}
-}
-
-func TestLoadEnvXMLContext(t *testing.T) {
-	t.Setenv("DYNCONFIG_TEST_XML_PORT", "9090")
-	file := memFile(t, "config.xml", `<config><host>from-xml</host><port>8080</port></config>`)
-
-	cfg, err := LoadEnvXMLContext[envXMLConfig](t.Context())(file)
-	if err != nil {
-		t.Fatalf("LoadEnvXMLContext: %s", err)
-	}
-	if cfg.Host != "from-xml" || cfg.Port != 9090 {
-		t.Errorf("got host=%q port=%d, want from-xml/9090", cfg.Host, cfg.Port)
-	}
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	_, err = LoadEnvXMLContext[envXMLConfig](ctx)(file)
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("canceled context: got error %v, want context.Canceled", err)
 	}
 }

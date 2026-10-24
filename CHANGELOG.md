@@ -8,24 +8,15 @@ and this project adheres to [Go module versioning](https://go.dev/doc/modules/ve
 
 ## [Unreleased]
 
-### Added
-
-- `…Context` factories for every load and save function (`LoadJSONContext`,
-  `LoadStringLinesTContext`, `SaveJSONContext`, `SaveStringContext`,
-  `SaveStringLinesContext`, …, and `loadenv.LoadEnvJSONContext` /
-  `LoadEnvXMLContext`). They take a `context.Context` as their first argument
-  and return a load or save function for `NewLoader`, `LoadAndWatch`, and
-  `MustLoadAndWatch` that uses it instead of `context.Background()` for every
-  reload, `Mutate`, and `Set`.
-
 ### Changed
 
 - Bumped the Go directive to 1.26, required by `ungerik/go-fs` v1.0.0-beta.2;
   updated `golang.org/x/sys` to v0.49.0. `testify` is no longer an indirect
   dependency.
-- `SaveJSON` and `SaveXML` called with only empty indent strings (`SaveJSON("")`)
-  now write compact output, like calling them without arguments; before they
-  wrote line breaks without indentation.
+- `SaveJSON[T]` and `SaveXML[T]` are now direct save functions that write compact
+  output and can be passed to `NewLoader` without calling a factory. Use the new
+  `SaveJSONIndent[T]` and `SaveXMLIndent[T]` factories for indented output; an
+  empty indent string produces compact output.
 
 ## [v1.0.0] - 2026-06-29
 

@@ -1,8 +1,6 @@
 package dynconfig
 
 import (
-	"context"
-	"errors"
 	"testing"
 )
 
@@ -58,61 +56,37 @@ func TestLoadJSON_FileNotExist(t *testing.T) {
 	}
 }
 
-func TestSaveJSONContext(t *testing.T) {
+func TestSaveJSON(t *testing.T) {
+	file := memFile(t, "config.json", "old")
+	if err := SaveJSON[jsonConfig](file, jsonConfig{Host: "h", Port: 1}); err != nil {
+		t.Fatalf("SaveJSON: %s", err)
+	}
+	if got, want := readBack(t, file), `{"host":"h","port":1,"debug":false}`; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSaveJSONIndent(t *testing.T) {
 	cfg := jsonConfig{Host: "h", Port: 1}
 	tests := []struct {
 		name   string
-		indent []string
+		indent string
 		want   string
 	}{
-		{"no indent is compact", nil, `{"host":"h","port":1,"debug":false}`},
-		{"empty indent is compact", []string{""}, `{"host":"h","port":1,"debug":false}`},
-		{"indent strings are concatenated", []string{" ", " "}, "{\n  \"host\": \"h\",\n  \"port\": 1,\n  \"debug\": false\n}"},
+		{"empty indent is compact", "", `{"host":"h","port":1,"debug":false}`},
+		{"two-space indent", "  ", "{\n  \"host\": \"h\",\n  \"port\": 1,\n  \"debug\": false\n}"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			file := memFile(t, "config.json", "old")
 
-			err := SaveJSONContext[jsonConfig](t.Context(), tt.indent...)(file, cfg)
+			err := SaveJSONIndent[jsonConfig](tt.indent)(file, cfg)
 			if err != nil {
-				t.Fatalf("SaveJSONContext: %s", err)
+				t.Fatalf("SaveJSONIndent: %s", err)
 			}
 			if got := readBack(t, file); got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestSaveJSONContext_Canceled(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	file := memFile(t, "config.json", "old")
-
-	err := SaveJSONContext[jsonConfig](ctx)(file, jsonConfig{Host: "h"})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("got error %v, want context.Canceled", err)
-	}
-	if got := readBack(t, file); got != "old" {
-		t.Errorf("file changed to %q, want %q", got, "old")
-	}
-}
-
-func TestLoadJSONContext(t *testing.T) {
-	file := memFile(t, "config.json", `{"host":"h","port":1}`)
-
-	cfg, err := LoadJSONContext[jsonConfig](t.Context())(file)
-	if err != nil {
-		t.Fatalf("LoadJSONContext: %s", err)
-	}
-	if want := (jsonConfig{Host: "h", Port: 1}); cfg != want {
-		t.Errorf("got %+v, want %+v", cfg, want)
-	}
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	_, err = LoadJSONContext[jsonConfig](ctx)(file)
-	if !errors.Is(err, context.Canceled) {
-		t.Errorf("canceled context: got error %v, want context.Canceled", err)
 	}
 }

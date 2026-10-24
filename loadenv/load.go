@@ -53,34 +53,15 @@ import (
 //	    nil,
 //	)
 func LoadEnvJSON[T any](file fs.File) (config T, err error) {
-	return LoadEnvJSONContext[T](context.Background())(file)
-}
-
-// LoadEnvJSONContext returns a load function that works like LoadEnvJSON but
-// reads with ctx instead of context.Background().
-//
-// The returned function uses ctx for every reload, so pass a context that lives
-// as long as the Loader: once ctx is canceled, every reload fails.
-//
-// Example:
-//
-//	loader := dynconfig.MustLoadAndWatch(
-//	    "config.json",
-//	    loadenv.LoadEnvJSONContext[Config](ctx),
-//	    nil, nil, nil, nil,
-//	)
-func LoadEnvJSONContext[T any](ctx context.Context) func(file fs.File) (T, error) {
-	return func(file fs.File) (config T, err error) {
-		err = file.ReadJSON(ctx, &config)
-		if err != nil {
-			return *new(T), err
-		}
-		err = ParseEnv(&config)
-		if err != nil {
-			return *new(T), err
-		}
-		return config, nil
+	err = file.ReadJSON(context.Background(), &config)
+	if err != nil {
+		return *new(T), err
 	}
+	err = ParseEnv(&config)
+	if err != nil {
+		return *new(T), err
+	}
+	return config, nil
 }
 
 // LoadEnvXML loads XML configuration with environment variable overrides.
@@ -118,22 +99,13 @@ func LoadEnvJSONContext[T any](ctx context.Context) func(file fs.File) (T, error
 //	// Result: {Database: "prod.db", Port: 8080, Debug: false}
 //	// DB_NAME and APP_PORT from environment override XML values
 func LoadEnvXML[T any](file fs.File) (config T, err error) {
-	return LoadEnvXMLContext[T](context.Background())(file)
-}
-
-// LoadEnvXMLContext returns a load function that works like LoadEnvXML but
-// reads with ctx instead of context.Background(). See LoadEnvJSONContext for
-// the lifetime of ctx.
-func LoadEnvXMLContext[T any](ctx context.Context) func(file fs.File) (T, error) {
-	return func(file fs.File) (config T, err error) {
-		err = file.ReadXML(ctx, &config)
-		if err != nil {
-			return *new(T), err
-		}
-		err = ParseEnv(&config)
-		if err != nil {
-			return *new(T), err
-		}
-		return config, nil
+	err = file.ReadXML(context.Background(), &config)
+	if err != nil {
+		return *new(T), err
 	}
+	err = ParseEnv(&config)
+	if err != nil {
+		return *new(T), err
+	}
+	return config, nil
 }

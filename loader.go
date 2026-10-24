@@ -691,7 +691,7 @@ func (l *Loader[T]) Get() T {
 //	loader := dynconfig.MustLoadAndWatch(
 //	    "counter.json",
 //	    dynconfig.LoadJSON[Counter],
-//	    dynconfig.SaveJSON[Counter](),
+//	    dynconfig.SaveJSON[Counter],
 //	    nil, nil, nil,
 //	)
 //
@@ -779,7 +779,7 @@ func (l *Loader[T]) Mutate(reload bool, mutate func(config T) (T, error)) (err e
 //	loader := dynconfig.MustLoadAndWatch(
 //	    "config.json",
 //	    dynconfig.LoadJSON[Config],
-//	    dynconfig.SaveJSON[Config]("  "),
+//	    dynconfig.SaveJSONIndent[Config]("  "),
 //	    nil, nil, nil,
 //	)
 //

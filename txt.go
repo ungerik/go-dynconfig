@@ -49,25 +49,7 @@ var SplitLines = func(str string) []string {
 //	}
 //	fmt.Println(content)
 func LoadString(file fs.File) (string, error) {
-	return LoadStringContext(context.Background())(file)
-}
-
-// LoadStringContext returns a load function that works like LoadString but
-// reads with ctx instead of context.Background().
-//
-// The returned function uses ctx for every reload, so pass a context that lives
-// as long as the Loader: once ctx is canceled, every reload fails.
-//
-// Example:
-//
-//	loader := dynconfig.MustLoadAndWatch(
-//	    "message.txt",
-//	    dynconfig.LoadStringContext(ctx),
-//	    dynconfig.SaveStringContext(ctx),
-//	    nil, nil, nil,
-//	)
-func LoadStringContext(ctx context.Context) func(file fs.File) (string, error) {
-	return LoadStringTContext[string](ctx)
+	return LoadStringT[string](file)
 }
 
 // SaveString writes the entire string as the file content, overwriting any
@@ -90,28 +72,7 @@ func LoadStringContext(ctx context.Context) func(file fs.File) (string, error) {
 //	    return s + "!", nil
 //	})
 func SaveString(file fs.File, config string) error {
-	return SaveStringContext(context.Background())(file, config)
-}
-
-// SaveStringContext returns a save function that works like SaveString but
-// writes with ctx instead of context.Background().
-//
-// The returned function uses ctx for every write, so pass a context that lives
-// as long as the Loader: once ctx is canceled, every Loader.Mutate and
-// Loader.Set through it fails.
-//
-// Example:
-//
-//	loader := dynconfig.MustLoadAndWatch(
-//	    "message.txt",
-//	    dynconfig.LoadStringContext(ctx),
-//	    dynconfig.SaveStringContext(ctx),
-//	    nil, nil, nil,
-//	)
-func SaveStringContext(ctx context.Context) func(file fs.File, config string) error {
-	return func(file fs.File, config string) error {
-		return file.WriteAllString(ctx, config)
-	}
+	return file.WriteAllString(context.Background(), config)
 }
 
 // LoadStringT loads the entire file content as a string of custom type T.
@@ -129,20 +90,11 @@ func SaveStringContext(ctx context.Context) func(file fs.File, config string) er
 //	}
 //	// key is of type APIKey
 func LoadStringT[T ~string](file fs.File) (T, error) {
-	return LoadStringTContext[T](context.Background())(file)
-}
-
-// LoadStringTContext returns a load function that works like LoadStringT but
-// reads with ctx instead of context.Background(). See LoadStringContext for the
-// lifetime of ctx.
-func LoadStringTContext[T ~string](ctx context.Context) func(file fs.File) (T, error) {
-	return func(file fs.File) (T, error) {
-		str, err := file.ReadAllString(ctx)
-		if err != nil {
-			return "", err
-		}
-		return T(str), nil
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return "", err
 	}
+	return T(str), nil
 }
 
 // SaveStringT writes the entire string of custom type T as the file content,
@@ -162,17 +114,7 @@ func LoadStringTContext[T ~string](ctx context.Context) func(file fs.File) (T, e
 //	    nil, nil, nil,
 //	)
 func SaveStringT[T ~string](file fs.File, config T) error {
-	return SaveStringTContext[T](context.Background())(file, config)
-}
-
-// SaveStringTContext returns a save function that works like SaveStringT but
-// writes with ctx instead of context.Background(). See SaveStringContext for
-// the lifetime of ctx.
-func SaveStringTContext[T ~string](ctx context.Context) func(file fs.File, config T) error {
-	save := SaveStringContext(ctx)
-	return func(file fs.File, config T) error {
-		return save(file, string(config))
-	}
+	return SaveString(file, string(config))
 }
 
 // LoadStringTrimSpace loads the file content as a string with whitespace trimmed.
@@ -185,14 +127,7 @@ func SaveStringTContext[T ~string](ctx context.Context) func(file fs.File, confi
 //	token, err := dynconfig.LoadStringTrimSpace("token.txt")
 //	// token will be "abc123"
 func LoadStringTrimSpace(file fs.File) (string, error) {
-	return LoadStringTrimSpaceContext(context.Background())(file)
-}
-
-// LoadStringTrimSpaceContext returns a load function that works like
-// LoadStringTrimSpace but reads with ctx instead of context.Background(). See
-// LoadStringContext for the lifetime of ctx.
-func LoadStringTrimSpaceContext(ctx context.Context) func(file fs.File) (string, error) {
-	return LoadStringTrimSpaceTContext[string](ctx)
+	return LoadStringTrimSpaceT[string](file)
 }
 
 // SaveStringTrimSpace writes the string as the file content with leading and
@@ -210,16 +145,7 @@ func LoadStringTrimSpaceContext(ctx context.Context) func(file fs.File) (string,
 //	    nil, nil, nil,
 //	)
 func SaveStringTrimSpace(file fs.File, config string) error {
-	return SaveStringTrimSpaceContext(context.Background())(file, config)
-}
-
-// SaveStringTrimSpaceContext returns a save function that works like
-// SaveStringTrimSpace but writes with ctx instead of context.Background(). See
-// SaveStringContext for the lifetime of ctx.
-func SaveStringTrimSpaceContext(ctx context.Context) func(file fs.File, config string) error {
-	return func(file fs.File, config string) error {
-		return file.WriteAllString(ctx, strings.TrimSpace(config))
-	}
+	return file.WriteAllString(context.Background(), strings.TrimSpace(config))
 }
 
 // LoadStringTrimSpaceT loads the file content as a string type T with whitespace trimmed.
@@ -234,20 +160,11 @@ func SaveStringTrimSpaceContext(ctx context.Context) func(file fs.File, config s
 //	token, err := dynconfig.LoadStringTrimSpaceT[Token]("auth-token.txt")
 //	// token will be Token("secret123")
 func LoadStringTrimSpaceT[T ~string](file fs.File) (T, error) {
-	return LoadStringTrimSpaceTContext[T](context.Background())(file)
-}
-
-// LoadStringTrimSpaceTContext returns a load function that works like
-// LoadStringTrimSpaceT but reads with ctx instead of context.Background(). See
-// LoadStringContext for the lifetime of ctx.
-func LoadStringTrimSpaceTContext[T ~string](ctx context.Context) func(file fs.File) (T, error) {
-	return func(file fs.File) (T, error) {
-		str, err := file.ReadAllString(ctx)
-		if err != nil {
-			return "", err
-		}
-		return T(strings.TrimSpace(str)), nil
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return "", err
 	}
+	return T(strings.TrimSpace(str)), nil
 }
 
 // SaveStringTrimSpaceT writes the string of type T as the file content with
@@ -268,17 +185,7 @@ func LoadStringTrimSpaceTContext[T ~string](ctx context.Context) func(file fs.Fi
 //	    nil, nil, nil,
 //	)
 func SaveStringTrimSpaceT[T ~string](file fs.File, config T) error {
-	return SaveStringTrimSpaceTContext[T](context.Background())(file, config)
-}
-
-// SaveStringTrimSpaceTContext returns a save function that works like
-// SaveStringTrimSpaceT but writes with ctx instead of context.Background(). See
-// SaveStringContext for the lifetime of ctx.
-func SaveStringTrimSpaceTContext[T ~string](ctx context.Context) func(file fs.File, config T) error {
-	save := SaveStringTrimSpaceContext(ctx)
-	return func(file fs.File, config T) error {
-		return save(file, string(config))
-	}
+	return SaveStringTrimSpace(file, string(config))
 }
 
 // LoadStringLines loads the file as a slice of strings, one per line.
@@ -296,20 +203,11 @@ func SaveStringTrimSpaceTContext[T ~string](ctx context.Context) func(file fs.Fi
 //	hosts, err := dynconfig.LoadStringLines("hosts.txt")
 //	// hosts = []string{"api.example.com", "db.example.com", "cache.example.com"}
 func LoadStringLines(file fs.File) ([]string, error) {
-	return LoadStringLinesContext(context.Background())(file)
-}
-
-// LoadStringLinesContext returns a load function that works like
-// LoadStringLines but reads with ctx instead of context.Background(). See
-// LoadStringContext for the lifetime of ctx.
-func LoadStringLinesContext(ctx context.Context) func(file fs.File) ([]string, error) {
-	return func(file fs.File) ([]string, error) {
-		str, err := file.ReadAllString(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return SplitLines(str), nil
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return nil, err
 	}
+	return SplitLines(str), nil
 }
 
 // SaveStringLines returns a save function that writes a slice of strings to the
@@ -342,23 +240,13 @@ func LoadStringLinesContext(ctx context.Context) func(file fs.File) ([]string, e
 //	    return append(hosts, "new.example.com"), nil
 //	})
 func SaveStringLines(sep ...string) func(file fs.File, config []string) error {
-	return SaveStringLinesContext(context.Background(), sep...)
-}
-
-// SaveStringLinesContext is like SaveStringLines but writes with ctx instead of
-// context.Background().
-//
-// The returned save function uses ctx for every write, so pass a context that
-// lives as long as the Loader: once ctx is canceled, every Loader.Mutate and
-// Loader.Set through it fails.
-func SaveStringLinesContext(ctx context.Context, sep ...string) func(file fs.File, config []string) error {
 	separator := resolveLineSeparator(sep)
 	return func(file fs.File, config []string) error {
 		lines := make([]string, len(config))
 		for i, line := range config {
 			lines[i] = sanitizeLine(line, separator)
 		}
-		return file.WriteAllString(ctx, strings.Join(lines, separator))
+		return file.WriteAllString(context.Background(), strings.Join(lines, separator))
 	}
 }
 
@@ -373,21 +261,11 @@ func SaveStringLinesContext(ctx context.Context, sep ...string) func(file fs.Fil
 //	hosts, err := dynconfig.LoadStringLinesT[Hostname]("servers.txt")
 //	// Returns []Hostname
 func LoadStringLinesT[T ~string](file fs.File) ([]T, error) {
-	return LoadStringLinesTContext[T](context.Background())(file)
-}
-
-// LoadStringLinesTContext returns a load function that works like
-// LoadStringLinesT but reads with ctx instead of context.Background(). See
-// LoadStringContext for the lifetime of ctx.
-func LoadStringLinesTContext[T ~string](ctx context.Context) func(file fs.File) ([]T, error) {
-	load := LoadStringLinesContext(ctx)
-	return func(file fs.File) ([]T, error) {
-		strs, err := load(file)
-		if err != nil {
-			return nil, err
-		}
-		return *(*[]T)(unsafe.Pointer(&strs)), nil //#nosec G103 -- unsafe OK
+	strs, err := LoadStringLines(file)
+	if err != nil {
+		return nil, err
 	}
+	return *(*[]T)(unsafe.Pointer(&strs)), nil //#nosec G103 -- unsafe OK
 }
 
 // SaveStringLinesT returns a save function that writes a slice of strings of
@@ -408,13 +286,7 @@ func LoadStringLinesTContext[T ~string](ctx context.Context) func(file fs.File) 
 //	    nil, nil, nil,
 //	)
 func SaveStringLinesT[T ~string](sep ...string) func(file fs.File, config []T) error {
-	return SaveStringLinesTContext[T](context.Background(), sep...)
-}
-
-// SaveStringLinesTContext is like SaveStringLinesT but writes with ctx instead
-// of context.Background(). See SaveStringLinesContext for the lifetime of ctx.
-func SaveStringLinesTContext[T ~string](ctx context.Context, sep ...string) func(file fs.File, config []T) error {
-	save := SaveStringLinesContext(ctx, sep...)
+	save := SaveStringLines(sep...)
 	return func(file fs.File, config []T) error {
 		return save(file, *(*[]string)(unsafe.Pointer(&config))) //#nosec G103 -- unsafe OK
 	}
@@ -435,14 +307,7 @@ func SaveStringLinesTContext[T ~string](ctx context.Context, sep ...string) func
 //	lines, err := dynconfig.LoadStringLinesTrimSpace("config.txt")
 //	// lines = []string{"api.example.com", "db.example.com"}
 func LoadStringLinesTrimSpace(file fs.File) ([]string, error) {
-	return LoadStringLinesTrimSpaceContext(context.Background())(file)
-}
-
-// LoadStringLinesTrimSpaceContext returns a load function that works like
-// LoadStringLinesTrimSpace but reads with ctx instead of context.Background().
-// See LoadStringContext for the lifetime of ctx.
-func LoadStringLinesTrimSpaceContext(ctx context.Context) func(file fs.File) ([]string, error) {
-	return LoadStringLinesTrimSpaceTContext[string](ctx)
+	return LoadStringLinesTrimSpaceT[string](file)
 }
 
 // SaveStringLinesTrimSpace returns a save function that writes a slice of
@@ -461,16 +326,6 @@ func LoadStringLinesTrimSpaceContext(ctx context.Context) func(file fs.File) ([]
 //	    nil, nil, nil,
 //	)
 func SaveStringLinesTrimSpace(sep ...string) func(file fs.File, config []string) error {
-	return SaveStringLinesTrimSpaceContext(context.Background(), sep...)
-}
-
-// SaveStringLinesTrimSpaceContext is like SaveStringLinesTrimSpace but writes
-// with ctx instead of context.Background().
-//
-// The returned save function uses ctx for every write, so pass a context that
-// lives as long as the Loader: once ctx is canceled, every Loader.Mutate and
-// Loader.Set through it fails.
-func SaveStringLinesTrimSpaceContext(ctx context.Context, sep ...string) func(file fs.File, config []string) error {
 	separator := resolveLineSeparator(sep)
 	return func(file fs.File, config []string) error {
 		lines := make([]string, 0, len(config))
@@ -481,7 +336,7 @@ func SaveStringLinesTrimSpaceContext(ctx context.Context, sep ...string) func(fi
 				lines = append(lines, s)
 			}
 		}
-		return file.WriteAllString(ctx, strings.Join(lines, separator))
+		return file.WriteAllString(context.Background(), strings.Join(lines, separator))
 	}
 }
 
@@ -501,27 +356,18 @@ func SaveStringLinesTrimSpaceContext(ctx context.Context, sep ...string) func(fi
 //	emails, err := dynconfig.LoadStringLinesTrimSpaceT[Email]("emails.txt")
 //	// emails = []Email{"user@example.com", "admin@example.com"}
 func LoadStringLinesTrimSpaceT[T ~string](file fs.File) ([]T, error) {
-	return LoadStringLinesTrimSpaceTContext[T](context.Background())(file)
-}
-
-// LoadStringLinesTrimSpaceTContext returns a load function that works like
-// LoadStringLinesTrimSpaceT but reads with ctx instead of context.Background().
-// See LoadStringContext for the lifetime of ctx.
-func LoadStringLinesTrimSpaceTContext[T ~string](ctx context.Context) func(file fs.File) ([]T, error) {
-	return func(file fs.File) ([]T, error) {
-		str, err := file.ReadAllString(ctx)
-		if err != nil {
-			return nil, err
-		}
-		strs := SplitLines(str)
-		slice := make([]T, 0, len(strs))
-		for _, s := range strs {
-			if s = strings.TrimSpace(s); s != "" {
-				slice = append(slice, T(s))
-			}
-		}
-		return slice, nil
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return nil, err
 	}
+	strs := SplitLines(str)
+	slice := make([]T, 0, len(strs))
+	for _, s := range strs {
+		if s = strings.TrimSpace(s); s != "" {
+			slice = append(slice, T(s))
+		}
+	}
+	return slice, nil
 }
 
 // SaveStringLinesTrimSpaceT returns a save function that writes a slice of type
@@ -543,14 +389,7 @@ func LoadStringLinesTrimSpaceTContext[T ~string](ctx context.Context) func(file 
 //	    nil, nil, nil,
 //	)
 func SaveStringLinesTrimSpaceT[T ~string](sep ...string) func(file fs.File, config []T) error {
-	return SaveStringLinesTrimSpaceTContext[T](context.Background(), sep...)
-}
-
-// SaveStringLinesTrimSpaceTContext is like SaveStringLinesTrimSpaceT but writes
-// with ctx instead of context.Background(). See SaveStringLinesTrimSpaceContext
-// for the lifetime of ctx.
-func SaveStringLinesTrimSpaceTContext[T ~string](ctx context.Context, sep ...string) func(file fs.File, config []T) error {
-	save := SaveStringLinesTrimSpaceContext(ctx, sep...)
+	save := SaveStringLinesTrimSpace(sep...)
 	return func(file fs.File, config []T) error {
 		return save(file, *(*[]string)(unsafe.Pointer(&config))) //#nosec G103 -- unsafe OK
 	}
@@ -577,14 +416,7 @@ func SaveStringLinesTrimSpaceTContext[T ~string](ctx context.Context, sep ...str
 //	    // Domain is blocked
 //	}
 func LoadStringLineSet(file fs.File) (map[string]struct{}, error) {
-	return LoadStringLineSetContext(context.Background())(file)
-}
-
-// LoadStringLineSetContext returns a load function that works like
-// LoadStringLineSet but reads with ctx instead of context.Background(). See
-// LoadStringContext for the lifetime of ctx.
-func LoadStringLineSetContext(ctx context.Context) func(file fs.File) (map[string]struct{}, error) {
-	return LoadStringLineSetTContext[string](ctx)
+	return LoadStringLineSetT[string](file)
 }
 
 // SaveStringLineSet returns a save function that writes a set of strings to the
@@ -607,16 +439,6 @@ func LoadStringLineSetContext(ctx context.Context) func(file fs.File) (map[strin
 //	    return set, nil
 //	})
 func SaveStringLineSet(sep ...string) func(file fs.File, config map[string]struct{}) error {
-	return SaveStringLineSetContext(context.Background(), sep...)
-}
-
-// SaveStringLineSetContext is like SaveStringLineSet but writes with ctx
-// instead of context.Background().
-//
-// The returned save function uses ctx for every write, so pass a context that
-// lives as long as the Loader: once ctx is canceled, every Loader.Mutate and
-// Loader.Set through it fails.
-func SaveStringLineSetContext(ctx context.Context, sep ...string) func(file fs.File, config map[string]struct{}) error {
 	separator := resolveLineSeparator(sep)
 	return func(file fs.File, config map[string]struct{}) error {
 		lines := make([]string, 0, len(config))
@@ -625,7 +447,7 @@ func SaveStringLineSetContext(ctx context.Context, sep ...string) func(file fs.F
 		}
 		slices.Sort(lines)
 		lines = slices.Compact(lines) // Drop duplicates that collide after sanitizing
-		return file.WriteAllString(ctx, strings.Join(lines, separator))
+		return file.WriteAllString(context.Background(), strings.Join(lines, separator))
 	}
 }
 
@@ -640,25 +462,16 @@ func SaveStringLineSetContext(ctx context.Context, sep ...string) func(file fs.F
 //	allowed, err := dynconfig.LoadStringLineSetT[Domain]("allowed-domains.txt")
 //	// Returns map[Domain]struct{}
 func LoadStringLineSetT[T ~string](file fs.File) (map[T]struct{}, error) {
-	return LoadStringLineSetTContext[T](context.Background())(file)
-}
-
-// LoadStringLineSetTContext returns a load function that works like
-// LoadStringLineSetT but reads with ctx instead of context.Background(). See
-// LoadStringContext for the lifetime of ctx.
-func LoadStringLineSetTContext[T ~string](ctx context.Context) func(file fs.File) (map[T]struct{}, error) {
-	return func(file fs.File) (map[T]struct{}, error) {
-		str, err := file.ReadAllString(ctx)
-		if err != nil {
-			return nil, err
-		}
-		strs := SplitLines(str)
-		set := make(map[T]struct{}, len(strs))
-		for _, s := range strs {
-			set[T(s)] = struct{}{}
-		}
-		return set, nil
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return nil, err
 	}
+	strs := SplitLines(str)
+	set := make(map[T]struct{}, len(strs))
+	for _, s := range strs {
+		set[T(s)] = struct{}{}
+	}
+	return set, nil
 }
 
 // SaveStringLineSetT returns a save function that writes a set of strings of
@@ -680,14 +493,7 @@ func LoadStringLineSetTContext[T ~string](ctx context.Context) func(file fs.File
 //	    nil, nil, nil,
 //	)
 func SaveStringLineSetT[T ~string](sep ...string) func(file fs.File, config map[T]struct{}) error {
-	return SaveStringLineSetTContext[T](context.Background(), sep...)
-}
-
-// SaveStringLineSetTContext is like SaveStringLineSetT but writes with ctx
-// instead of context.Background(). See SaveStringLineSetContext for the
-// lifetime of ctx.
-func SaveStringLineSetTContext[T ~string](ctx context.Context, sep ...string) func(file fs.File, config map[T]struct{}) error {
-	save := SaveStringLineSetContext(ctx, sep...)
+	save := SaveStringLineSet(sep...)
 	return func(file fs.File, config map[T]struct{}) error {
 		set := make(map[string]struct{}, len(config))
 		for line := range config {
@@ -714,14 +520,7 @@ func SaveStringLineSetTContext[T ~string](ctx context.Context, sep ...string) fu
 //	whitelist, err := dynconfig.LoadStringLineSetTrimSpace("whitelist.txt")
 //	// whitelist = map[string]struct{}{"trusted.com": {}, "safe.org": {}}
 func LoadStringLineSetTrimSpace(file fs.File) (map[string]struct{}, error) {
-	return LoadStringLineSetTrimSpaceContext(context.Background())(file)
-}
-
-// LoadStringLineSetTrimSpaceContext returns a load function that works like
-// LoadStringLineSetTrimSpace but reads with ctx instead of
-// context.Background(). See LoadStringContext for the lifetime of ctx.
-func LoadStringLineSetTrimSpaceContext(ctx context.Context) func(file fs.File) (map[string]struct{}, error) {
-	return LoadStringLineSetTrimSpaceTContext[string](ctx)
+	return LoadStringLineSetTrimSpaceT[string](file)
 }
 
 // SaveStringLineSetTrimSpace returns a save function that writes a set of
@@ -742,16 +541,6 @@ func LoadStringLineSetTrimSpaceContext(ctx context.Context) func(file fs.File) (
 //	    nil, nil, nil,
 //	)
 func SaveStringLineSetTrimSpace(sep ...string) func(file fs.File, config map[string]struct{}) error {
-	return SaveStringLineSetTrimSpaceContext(context.Background(), sep...)
-}
-
-// SaveStringLineSetTrimSpaceContext is like SaveStringLineSetTrimSpace but
-// writes with ctx instead of context.Background().
-//
-// The returned save function uses ctx for every write, so pass a context that
-// lives as long as the Loader: once ctx is canceled, every Loader.Mutate and
-// Loader.Set through it fails.
-func SaveStringLineSetTrimSpaceContext(ctx context.Context, sep ...string) func(file fs.File, config map[string]struct{}) error {
 	separator := resolveLineSeparator(sep)
 	return func(file fs.File, config map[string]struct{}) error {
 		lines := make([]string, 0, len(config))
@@ -764,7 +553,7 @@ func SaveStringLineSetTrimSpaceContext(ctx context.Context, sep ...string) func(
 		}
 		slices.Sort(lines)
 		lines = slices.Compact(lines) // Drop duplicates that collide after sanitizing and trimming
-		return file.WriteAllString(ctx, strings.Join(lines, separator))
+		return file.WriteAllString(context.Background(), strings.Join(lines, separator))
 	}
 }
 
@@ -784,27 +573,18 @@ func SaveStringLineSetTrimSpaceContext(ctx context.Context, sep ...string) func(
 //	blocked, err := dynconfig.LoadStringLineSetTrimSpaceT[IPAddress]("blocked-ips.txt")
 //	// blocked = map[IPAddress]struct{}{"192.168.1.1": {}, "10.0.0.1": {}}
 func LoadStringLineSetTrimSpaceT[T ~string](file fs.File) (map[T]struct{}, error) {
-	return LoadStringLineSetTrimSpaceTContext[T](context.Background())(file)
-}
-
-// LoadStringLineSetTrimSpaceTContext returns a load function that works like
-// LoadStringLineSetTrimSpaceT but reads with ctx instead of
-// context.Background(). See LoadStringContext for the lifetime of ctx.
-func LoadStringLineSetTrimSpaceTContext[T ~string](ctx context.Context) func(file fs.File) (map[T]struct{}, error) {
-	return func(file fs.File) (map[T]struct{}, error) {
-		str, err := file.ReadAllString(ctx)
-		if err != nil {
-			return nil, err
-		}
-		strs := SplitLines(str)
-		set := make(map[T]struct{}, len(strs))
-		for _, s := range strs {
-			if s = strings.TrimSpace(s); s != "" {
-				set[T(s)] = struct{}{}
-			}
-		}
-		return set, nil
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return nil, err
 	}
+	strs := SplitLines(str)
+	set := make(map[T]struct{}, len(strs))
+	for _, s := range strs {
+		if s = strings.TrimSpace(s); s != "" {
+			set[T(s)] = struct{}{}
+		}
+	}
+	return set, nil
 }
 
 // SaveStringLineSetTrimSpaceT returns a save function that writes a set of
@@ -829,14 +609,7 @@ func LoadStringLineSetTrimSpaceTContext[T ~string](ctx context.Context) func(fil
 //	    nil, nil, nil,
 //	)
 func SaveStringLineSetTrimSpaceT[T ~string](sep ...string) func(file fs.File, config map[T]struct{}) error {
-	return SaveStringLineSetTrimSpaceTContext[T](context.Background(), sep...)
-}
-
-// SaveStringLineSetTrimSpaceTContext is like SaveStringLineSetTrimSpaceT but
-// writes with ctx instead of context.Background(). See
-// SaveStringLineSetTrimSpaceContext for the lifetime of ctx.
-func SaveStringLineSetTrimSpaceTContext[T ~string](ctx context.Context, sep ...string) func(file fs.File, config map[T]struct{}) error {
-	save := SaveStringLineSetTrimSpaceContext(ctx, sep...)
+	save := SaveStringLineSetTrimSpace(sep...)
 	return func(file fs.File, config map[T]struct{}) error {
 		set := make(map[string]struct{}, len(config))
 		for line := range config {
@@ -848,8 +621,7 @@ func SaveStringLineSetTrimSpaceTContext[T ~string](ctx context.Context, sep ...s
 
 // resolveLineSeparator returns the line separator to use when writing lines.
 // With no arguments it defaults to a single newline ("\n"), otherwise the
-// concatenated sep strings are used, mirroring how SaveJSON and SaveXML treat
-// their variadic indent arguments.
+// concatenated sep strings are used.
 func resolveLineSeparator(sep []string) string {
 	if len(sep) == 0 {
 		return "\n"
