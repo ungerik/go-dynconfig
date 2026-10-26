@@ -12,8 +12,9 @@ and this project adheres to [Go module versioning](https://go.dev/doc/modules/ve
 
 - Updated `ungerik/go-fs` to v1.0.0-rc.1. With it, an empty indent passed to
   `SaveJSONIndent[T]` or `SaveXMLIndent[T]` puts every element on its own line
-  without indentation instead of writing compact output. Use `SaveJSON[T]` or
-  `SaveXML[T]` for compact output.
+  without indentation instead of writing compact output. As with any indent,
+  `LoadXML` reads the added whitespace back as character data into `,chardata`
+  and `,innerxml` fields. Use `SaveJSON[T]` or `SaveXML[T]` for compact output.
 
 ## [v1.1.0-beta.1] - 2026-10-24
 
