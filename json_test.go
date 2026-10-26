@@ -73,7 +73,7 @@ func TestSaveJSONIndent(t *testing.T) {
 		indent string
 		want   string
 	}{
-		{"empty indent is compact", "", `{"host":"h","port":1,"debug":false}`},
+		{"empty indent puts elements on own lines", "", "{\n\"host\": \"h\",\n\"port\": 1,\n\"debug\": false\n}"},
 		{"two-space indent", "  ", "{\n  \"host\": \"h\",\n  \"port\": 1,\n  \"debug\": false\n}"},
 	}
 	for _, tt := range tests {
