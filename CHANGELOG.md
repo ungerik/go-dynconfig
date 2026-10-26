@@ -8,6 +8,8 @@ and this project adheres to [Go module versioning](https://go.dev/doc/modules/ve
 
 ## [Unreleased]
 
+## [v1.1.0-rc.1] - 2026-10-26
+
 ### Changed
 
 - **Breaking:** Requires `ungerik/go-fs` v1.0.0-rc.1, so modules that use this
