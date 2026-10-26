@@ -460,13 +460,16 @@ func (l *Loader[T]) Watch() error {
 	}
 	// The watcher reports a changed file by the path it observed, which can
 	// differ in form from l.file, like "./config.json" for "config.json" or
-	// "/dir/config.json" for "file:///dir/config.json",
-	// so a local file is identified by its absolute path.
+	// "/dir/config.json" for "file:///dir/config.json". A local file is watched
+	// in its absolute directory and identified by its absolute path, which
+	// also keeps working after the working directory changed.
+	watchDir := l.file.Dir()
 	isConfigFile := func(f fs.File) bool { return f == l.file }
 	if absPath := absLocalPath(l.file); absPath != "" {
-		isConfigFile = func(f fs.File) bool { return absLocalPath(f) == absPath }
+		watchDir = fs.File(filepath.Dir(absPath))
+		isConfigFile = func(f fs.File) bool { return f.LocalPath() == absPath }
 	}
-	unwatch, err := l.file.Dir().Watch(func(f fs.File, e fs.Event) {
+	unwatch, err := watchDir.Watch(func(f fs.File, e fs.Event) {
 		if isConfigFile(f) && (e.HasCreate() || e.HasWrite()) {
 			l.Invalidate()
 		}
@@ -886,14 +889,10 @@ func (l *Loader[T]) writeConfig(atomic bool, localPath string, config T) error {
 // written file, and a save error or crash leaves the original file intact.
 // The caller must hold the directory lock.
 func (l *Loader[T]) saveAtomic(localPath string, config T) (err error) {
-	// LocalPath keeps a relative path relative, for which os.CreateTemp would
-	// create the temporary file in os.TempDir instead of the file's directory.
-	// An absolute tmpPath is also never read as "~" or a URI by fs.File.
-	localPath, err = filepath.Abs(localPath)
-	if err != nil {
-		return err
-	}
-	dir, name := filepath.Split(localPath)
+	// filepath.Split would return an empty directory for a relative path
+	// without one, like "config.json", for which os.CreateTemp would create
+	// the temporary file in os.TempDir instead of the file's directory.
+	dir, name := filepath.Dir(localPath), filepath.Base(localPath)
 	tmp, err := os.CreateTemp(dir, "."+name+".tmp-*")
 	if err != nil {
 		return err

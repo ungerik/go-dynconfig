@@ -35,7 +35,8 @@ and this project adheres to [Go module versioning](https://go.dev/doc/modules/ve
 - `Watch`, and so `LoadAndWatch`, reloads a config whose path the file system
   watcher reports in another form: a relative path like `config.json` never
   reloaded on Linux, `./config.json` never reloaded on macOS, and a `file://`
-  URI never reloaded on either.
+  URI never reloaded on either. A local config is now watched in its absolute
+  directory, so its hot reload also keeps working after `os.Chdir`.
 
 ## [v1.1.0-beta.1] - 2026-10-24
 

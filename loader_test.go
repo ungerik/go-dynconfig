@@ -51,10 +51,6 @@ func assertOnlyFile(t *testing.T, dir, name string) {
 // Get returns the new content instead of the cached value and onInvalidate
 // is called. This holds for every form of the local path, because the watcher
 // reports the changed file in a form of its own, like "./counter.json".
-//
-// Get is polled because the watcher delivers its events asynchronously and
-// an in-place write can be observed while the file is still truncated; a load
-// error keeps the cache invalid, so a later Get reads the complete file.
 func TestLoadAndWatch_ReloadsChangedFile(t *testing.T) {
 	writeInPlace := func(path, content string) error {
 		return os.WriteFile(path, []byte(content), 0o600)
@@ -104,15 +100,10 @@ func TestLoadAndWatch_ReloadsChangedFile(t *testing.T) {
 				t.Fatalf("change file: %s", err)
 			}
 
-			deadline := time.Now().Add(5 * time.Second)
-			for got := loader.Get().Value; got != 2; got = loader.Get().Value {
-				if time.Now().After(deadline) {
-					t.Fatalf("value = %d after the file changed, want 2 (watcher did not invalidate the cache)", got)
-				}
-				time.Sleep(10 * time.Millisecond)
-			}
+			waitForValue(t, loader, 2)
 			// Invalidate calls onInvalidate after releasing the mutex,
 			// so Get can return the new value before the callback ran.
+			deadline := time.Now().Add(5 * time.Second)
 			for invalidated.Load() == 0 {
 				if time.Now().After(deadline) {
 					t.Fatal("onInvalidate was not called after the file changed")
@@ -142,10 +133,47 @@ func TestLoadAndWatch_ReloadsChangedNonLocalFile(t *testing.T) {
 		t.Fatalf("change file: %s", err)
 	}
 
+	waitForValue(t, loader, 2)
+}
+
+// TestLoadAndWatch_InvalidatesRelativePathAfterChdir verifies that the watcher
+// of a relative path still invalidates the cache after the process changed its
+// working directory, like a daemon that calls os.Chdir("/") after it started.
+func TestLoadAndWatch_InvalidatesRelativePathAfterChdir(t *testing.T) {
+	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
+	t.Chdir(file.Dir().LocalPath())
+	var invalidated atomic.Int32
+	loader, err := LoadAndWatch(fs.File("./counter.json"), LoadJSON[counter], nil, nil, nil, func() { invalidated.Add(1) })
+	if err != nil {
+		t.Fatalf("LoadAndWatch: %s", err)
+	}
+	defer loader.Unwatch() //nolint:errcheck
+	t.Chdir(t.TempDir())
+
+	err = os.WriteFile(file.LocalPath(), []byte(`{"value": 2}`), 0o600)
+	if err != nil {
+		t.Fatalf("change file: %s", err)
+	}
+
 	deadline := time.Now().Add(5 * time.Second)
-	for got := loader.Get().Value; got != 2; got = loader.Get().Value {
+	for invalidated.Load() == 0 {
 		if time.Now().After(deadline) {
-			t.Fatalf("value = %d after the file changed, want 2 (watcher did not invalidate the cache)", got)
+			t.Fatal("onInvalidate was not called after the file changed")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// waitForValue polls loader.Get until it returns want, because the watcher
+// delivers its events asynchronously and an in-place write can be observed
+// while the file is still truncated; a load error keeps the cache invalid,
+// so a later Get reads the complete file. It fails the test after 5 seconds.
+func waitForValue(t *testing.T, loader *Loader[counter], want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for got := loader.Get().Value; got != want; got = loader.Get().Value {
+		if time.Now().After(deadline) {
+			t.Fatalf("value = %d after the file changed, want %d (watcher did not invalidate the cache)", got, want)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -633,6 +661,39 @@ func TestSet_RelativePathWritesTempFileBesideConfig(t *testing.T) {
 		t.Errorf("on-disk value = %d, want 7", onDisk.Value)
 	}
 	assertOnlyFile(t, dir, "counter.json")
+}
+
+// TestSet_RelativePathAfterWorkingDirectoryRemoved verifies that Set writes
+// through a relative path whose directory part still resolves after the
+// working directory was removed, like a release directory replaced by a deploy.
+func TestSet_RelativePathAfterWorkingDirectoryRemoved(t *testing.T) {
+	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
+	workDir := filepath.Join(file.Dir().LocalPath(), "release")
+	err := os.Mkdir(workDir, 0o700)
+	if err != nil {
+		t.Fatalf("Mkdir: %s", err)
+	}
+	t.Chdir(workDir)
+	loader := NewLoader(fs.File("../counter.json"), LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
+	err = os.Remove(workDir)
+	if err != nil {
+		t.Fatalf("Remove: %s", err)
+	}
+
+	err = loader.Set(counter{Value: 3})
+	if err != nil {
+		t.Fatalf("Set: %s", err)
+	}
+
+	var onDisk counter
+	err = file.ReadJSON(context.Background(), &onDisk)
+	if err != nil {
+		t.Fatalf("ReadJSON: %s", err)
+	}
+	if onDisk.Value != 3 {
+		t.Errorf("on-disk value = %d, want 3", onDisk.Value)
+	}
+	assertOnlyFile(t, file.Dir().LocalPath(), "counter.json")
 }
 
 func TestSet_NoSaveFuncSet(t *testing.T) {
