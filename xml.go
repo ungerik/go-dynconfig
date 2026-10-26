@@ -74,7 +74,10 @@ func SaveXML[T any](file fs.File, config T) error {
 }
 
 // SaveXMLIndent returns a save function that writes XML with the given indent.
-// An empty indent writes compact XML.
+// An empty indent puts every element on its own line without indentation.
+// With any indent, LoadXML reads the added whitespace back as character data
+// into ",chardata" and ",innerxml" fields, so the text of a ",chardata" field
+// grows with every save and load cycle. Use SaveXML for compact XML.
 // The returned function can be passed to NewLoader, LoadAndWatch, or
 // MustLoadAndWatch when indented output is needed.
 func SaveXMLIndent[T any](indent string) func(file fs.File, config T) error {

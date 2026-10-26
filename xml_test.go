@@ -77,7 +77,7 @@ func TestSaveXMLIndent(t *testing.T) {
 		indent string
 		want   string
 	}{
-		{"empty indent is compact", "", xml.Header + "<config><host>h</host><port>1</port></config>"},
+		{"empty indent puts elements on own lines", "", xml.Header + "<config>\n<host>h</host>\n<port>1</port>\n</config>"},
 		{"two-space indent", "  ", xml.Header + "<config>\n  <host>h</host>\n  <port>1</port>\n</config>"},
 	}
 	for _, tt := range tests {

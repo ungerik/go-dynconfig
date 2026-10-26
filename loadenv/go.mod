@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/caarlos0/env/v7 v7.1.0
-	github.com/ungerik/go-fs v1.0.0-beta.2
+	github.com/ungerik/go-fs v1.0.0-rc.1
 )
 
 require (

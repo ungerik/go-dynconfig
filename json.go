@@ -80,7 +80,8 @@ func SaveJSON[T any](file fs.File, config T) error {
 }
 
 // SaveJSONIndent returns a save function that writes JSON with the given indent.
-// An empty indent writes compact JSON.
+// An empty indent puts every element on its own line without indentation,
+// use SaveJSON for compact JSON.
 // The returned function can be passed to NewLoader, LoadAndWatch, or
 // MustLoadAndWatch when indented output is needed.
 func SaveJSONIndent[T any](indent string) func(file fs.File, config T) error {

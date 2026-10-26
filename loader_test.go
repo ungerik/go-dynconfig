@@ -8,8 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ungerik/go-fs"
 )
@@ -40,6 +43,152 @@ func assertOnlyFile(t *testing.T, dir, name string) {
 		if e.Name() != name {
 			t.Errorf("unexpected leftover file in directory: %s", e.Name())
 		}
+	}
+}
+
+// TestLoadAndWatch_ReloadsChangedFile verifies the hot-reload contract of
+// LoadAndWatch: after the watched file changes on disk, written in place or
+// replaced by an atomic rename like editors and Mutate in another process do,
+// Get returns the new content instead of the cached value and onInvalidate
+// is called. This holds for every form of the local path, because the watcher
+// reports the changed file in a form of its own, like "./counter.json".
+func TestLoadAndWatch_ReloadsChangedFile(t *testing.T) {
+	writeInPlace := func(path, content string) error {
+		return os.WriteFile(path, []byte(content), 0o600)
+	}
+	writeByRename := func(path, content string) error {
+		tmp := path + ".tmp"
+		err := os.WriteFile(tmp, []byte(content), 0o600)
+		if err != nil {
+			return err
+		}
+		return os.Rename(tmp, path)
+	}
+	absolute := func(t *testing.T, file fs.File) fs.File { return file }
+	relative := func(prefix string) func(*testing.T, fs.File) fs.File {
+		return func(t *testing.T, file fs.File) fs.File {
+			t.Chdir(file.Dir().LocalPath())
+			return fs.File(prefix + file.Name())
+		}
+	}
+	tests := []struct {
+		name string
+		// watched returns the form of file's path that the loader watches.
+		watched func(t *testing.T, file fs.File) fs.File
+		write   func(path, content string) error
+	}{
+		{"in-place write", absolute, writeInPlace},
+		{"atomic rename over the file", absolute, writeByRename},
+		{"relative path", relative(""), writeInPlace},
+		{"dot-relative path", relative("./"), writeInPlace},
+		{"file URI", func(t *testing.T, file fs.File) fs.File { return fs.File(file.URI()) }, writeInPlace},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := writeTempJSON(t, "counter.json", `{"value": 1}`)
+			var invalidated atomic.Int32
+			loader, err := LoadAndWatch(tt.watched(t, file), LoadJSON[counter], nil, nil, nil, func() { invalidated.Add(1) })
+			if err != nil {
+				t.Fatalf("LoadAndWatch: %s", err)
+			}
+			defer loader.Unwatch() //nolint:errcheck
+			if got := loader.Get().Value; got != 1 {
+				t.Fatalf("initial value = %d, want 1", got)
+			}
+
+			err = tt.write(file.LocalPath(), `{"value": 2}`)
+			if err != nil {
+				t.Fatalf("change file: %s", err)
+			}
+
+			waitForValue(t, loader, 2)
+			// Invalidate calls onInvalidate after releasing the mutex,
+			// so Get can return the new value before the callback ran.
+			deadline := time.Now().Add(5 * time.Second)
+			for invalidated.Load() == 0 {
+				if time.Now().After(deadline) {
+					t.Fatal("onInvalidate was not called after the file changed")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		})
+	}
+}
+
+// TestLoadAndWatch_ReloadsChangedNonLocalFile verifies that a file on a
+// non-local file system, which has no local path to compare, still reloads
+// after it changed: its watcher reports the file in the form it was watched.
+func TestLoadAndWatch_ReloadsChangedNonLocalFile(t *testing.T) {
+	file := memFile(t, "counter.json", `{"value": 1}`)
+	loader, err := LoadAndWatch(file, LoadJSON[counter], nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("LoadAndWatch: %s", err)
+	}
+	defer loader.Unwatch() //nolint:errcheck
+	if got := loader.Get().Value; got != 1 {
+		t.Fatalf("initial value = %d, want 1", got)
+	}
+
+	err = file.WriteAllString(t.Context(), `{"value": 2}`)
+	if err != nil {
+		t.Fatalf("change file: %s", err)
+	}
+
+	waitForValue(t, loader, 2)
+}
+
+// TestLoadAndWatch_KeepsUsingFileAfterChdir verifies that a Loader created
+// with a relative path keeps watching, loading and saving that file after the
+// process changed its working directory, like a daemon that calls os.Chdir("/")
+// after it started, and never a file with the same name in the new directory.
+func TestLoadAndWatch_KeepsUsingFileAfterChdir(t *testing.T) {
+	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
+	t.Chdir(file.Dir().LocalPath())
+	loader, err := LoadAndWatch(fs.File("counter.json"), LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
+	if err != nil {
+		t.Fatalf("LoadAndWatch: %s", err)
+	}
+	defer loader.Unwatch() //nolint:errcheck
+	other := writeTempJSON(t, "counter.json", `{"value": 100}`)
+	t.Chdir(other.Dir().LocalPath())
+
+	err = os.WriteFile(file.LocalPath(), []byte(`{"value": 2}`), 0o600)
+	if err != nil {
+		t.Fatalf("change file: %s", err)
+	}
+	waitForValue(t, loader, 2)
+
+	err = loader.Set(counter{Value: 7})
+	if err != nil {
+		t.Fatalf("Set: %s", err)
+	}
+	for _, tc := range []struct {
+		file fs.File
+		want int
+	}{{file, 7}, {other, 100}} {
+		var onDisk counter
+		err = tc.file.ReadJSON(context.Background(), &onDisk)
+		if err != nil {
+			t.Fatalf("ReadJSON: %s", err)
+		}
+		if onDisk.Value != tc.want {
+			t.Errorf("%s holds %d, want %d", tc.file.LocalPath(), onDisk.Value, tc.want)
+		}
+	}
+}
+
+// waitForValue polls loader.Get until it returns want, because the watcher
+// delivers its events asynchronously and an in-place write can be observed
+// while the file is still truncated; a load error keeps the cache invalid,
+// so a later Get reads the complete file. It fails the test after 5 seconds.
+func waitForValue(t *testing.T, loader *Loader[counter], want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for got := loader.Get().Value; got != want; got = loader.Get().Value {
+		if time.Now().After(deadline) {
+			t.Fatalf("value = %d after the file changed, want %d (watcher did not invalidate the cache)", got, want)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -497,6 +646,113 @@ func TestSet_CreatesMissingFile(t *testing.T) {
 		t.Errorf("on-disk value = %d, want 5", onDisk.Value)
 	}
 	assertOnlyFile(t, dir, "new.json")
+}
+
+// TestSet_RelativePathWritesTempFileBesideConfig verifies that the atomic
+// write creates its temporary file in the directory of a relative config path.
+// LocalPath keeps "counter.json" relative, and a temporary file created in
+// os.TempDir would make the rename fail across file systems and copy the
+// config to a shared directory, so a missing TMPDIR must not matter.
+func TestSet_RelativePathWritesTempFileBesideConfig(t *testing.T) {
+	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
+	dir := file.Dir().LocalPath()
+	t.Chdir(dir)
+	t.Setenv("TMPDIR", filepath.Join(dir, "missing"))
+	loader := NewLoader(fs.File("counter.json"), LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
+
+	err := loader.Set(counter{Value: 7})
+	if err != nil {
+		t.Fatalf("Set: %s", err)
+	}
+
+	var onDisk counter
+	err = file.ReadJSON(context.Background(), &onDisk)
+	if err != nil {
+		t.Fatalf("ReadJSON: %s", err)
+	}
+	if onDisk.Value != 7 {
+		t.Errorf("on-disk value = %d, want 7", onDisk.Value)
+	}
+	assertOnlyFile(t, dir, "counter.json")
+}
+
+// TestSet_RelativePathAfterWorkingDirectoryRemoved verifies that Set writes
+// through a relative path whose directory part still resolves after the
+// working directory was removed, like a release directory replaced by a deploy.
+func TestSet_RelativePathAfterWorkingDirectoryRemoved(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows can't remove the working directory of a process")
+	}
+	file := writeTempJSON(t, "counter.json", `{"value": 1}`)
+	workDir := filepath.Join(file.Dir().LocalPath(), "release")
+	err := os.Mkdir(workDir, 0o700)
+	if err != nil {
+		t.Fatalf("Mkdir: %s", err)
+	}
+	t.Chdir(workDir)
+	loader := NewLoader(fs.File("../counter.json"), LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
+	err = os.Remove(workDir)
+	if err != nil {
+		t.Fatalf("Remove: %s", err)
+	}
+
+	err = loader.Set(counter{Value: 3})
+	if err != nil {
+		t.Fatalf("Set: %s", err)
+	}
+
+	var onDisk counter
+	err = file.ReadJSON(context.Background(), &onDisk)
+	if err != nil {
+		t.Fatalf("ReadJSON: %s", err)
+	}
+	if onDisk.Value != 3 {
+		t.Errorf("on-disk value = %d, want 3", onDisk.Value)
+	}
+	assertOnlyFile(t, file.Dir().LocalPath(), "counter.json")
+}
+
+// TestSet_RelativePathUnderTildeDirectory verifies that Set writes a config
+// in a directory literally named "~" to that file. go-fs reads a path that
+// begins with "~" as the home directory, so the temporary file's path must keep
+// the "./" in front of it, or the config would be written to the home directory
+// and the empty temporary file renamed over it.
+func TestSet_RelativePathUnderTildeDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	work := t.TempDir()
+	t.Chdir(work)
+	err := os.Mkdir("~", 0o700)
+	if err != nil {
+		t.Fatalf("Mkdir: %s", err)
+	}
+	err = os.WriteFile(filepath.Join("~", "counter.json"), []byte(`{"value": 1}`), 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile: %s", err)
+	}
+	loader := NewLoader(fs.File("./~/counter.json"), LoadJSON[counter], SaveJSON[counter], nil, nil, nil)
+
+	err = loader.Set(counter{Value: 5})
+	if err != nil {
+		t.Fatalf("Set: %s", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(work, "~", "counter.json"))
+	if err != nil {
+		t.Fatalf("ReadFile: %s", err)
+	}
+	if got, want := string(data), `{"value":5}`; got != want {
+		t.Errorf("config = %q, want %q", got, want)
+	}
+	assertOnlyFile(t, filepath.Join(work, "~"), "counter.json")
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		t.Fatalf("ReadDir: %s", err)
+	}
+	if len(entries) > 0 {
+		t.Errorf("Set wrote %q into the home directory", entries[0].Name())
+	}
 }
 
 func TestSet_NoSaveFuncSet(t *testing.T) {

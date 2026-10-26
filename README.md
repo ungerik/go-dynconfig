@@ -563,7 +563,10 @@ against `Load`, `Get`, and `Invalidate`.
 The write-back function is passed to the constructor right after the `load`
 function. `SaveJSON[T]` and `SaveXML[T]` are direct write counterparts to
 `LoadJSON` and `LoadXML`; use `SaveJSONIndent[T]("  ")` or
-`SaveXMLIndent[T]("  ")` when indented output is needed. `Mutate` reuses the
+`SaveXMLIndent[T]("  ")` when indented output is needed. `LoadXML` reads the
+whitespace of indented XML back as character data into `,chardata` and
+`,innerxml` fields, so the text of a `,chardata` field grows with every save and
+load cycle; use `SaveXML[T]` for such configurations. `Mutate` reuses the
 cached configuration when one is valid and only re-reads from disk when the
 cache is empty or has been invalidated (the same caching `Get` and `Load` use);
 `Set` never reads.
@@ -896,7 +899,7 @@ config := dynconfig.MustLoadAndWatch(
 - `Loader[T]` - Main configuration loader with file watching
 - `LoadAndWatch[T](file, load, save, onLoad, onError, onInvalidate) (*Loader[T], error)` - Create and start loader
 - `MustLoadAndWatch[T](...) *Loader[T]` - Like LoadAndWatch but panics on error
-- `NewLoader[T](...) *Loader[T]` - Create loader without loading
+- `NewLoader[T](...) *Loader[T]` - Create loader without loading; a relative local path is resolved to an absolute path
 
 ### Loader Methods
 
@@ -908,7 +911,7 @@ config := dynconfig.MustLoadAndWatch(
 - `Set(config T) error` - Write a complete config value directly under the same lock and atomic rename (no read, no callback)
 - `Watch() error` - Start watching file
 - `Unwatch() error` - Stop watching file
-- `File() fs.File` - Get watched file path
+- `File() fs.File` - Get watched file path (absolute for a relative local path)
 
 ### JSON Loaders
 

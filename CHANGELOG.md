@@ -8,6 +8,43 @@ and this project adheres to [Go module versioning](https://go.dev/doc/modules/ve
 
 ## [Unreleased]
 
+## [v1.1.0-rc.1] - 2026-10-26
+
+### Changed
+
+- **Breaking:** Requires `ungerik/go-fs` v1.0.0-rc.1, so modules that use this
+  package build with it too. Code that calls go-fs directly has to follow its
+  renames: `File.URL` is `File.URI`, `fs.FileURLs` is `fs.FileURIs`,
+  `fs.ReadHeader` and `fs.ReadHeaderString` take a `ctx` first, and
+  `fsimpl.ReadonlyFileBuffer` is `ReadOnlyFileBuffer`. File URIs follow
+  RFC 8089: `file://localhost/dir/config.json` is the absolute path
+  `/dir/config.json`, and a relative URI like `file://conf/app.json` names the
+  host `conf`, which is the UNC path `\\conf\app.json` on Windows and fails to
+  load, watch and save elsewhere. See the go-fs CHANGELOG for all changes.
+- **Breaking:** With go-fs v1.0.0-rc.1, an empty indent passed to
+  `SaveJSONIndent[T]` or `SaveXMLIndent[T]` puts every element on its own line
+  without indentation instead of writing compact output. Use `SaveJSON[T]` or
+  `SaveXML[T]` for compact output. With any indent, `LoadXML` reads the added
+  whitespace back as character data into `,chardata` and `,innerxml` fields,
+  so the text of a `,chardata` field grows with every save and load cycle.
+- `NewLoader`, and so `LoadAndWatch` and `MustLoadAndWatch`, resolve a relative
+  local path to an absolute path when the `Loader` is created. `Loader.File`
+  returns it and the load and save functions are called with it. The `Loader`
+  keeps watching, loading and saving the same file after `os.Chdir` or after
+  its working directory was removed; before, a reload after `os.Chdir` read a
+  file with the same name in the new working directory.
+
+### Fixed
+
+- `Set` and `Mutate` create the temporary file of the atomic write in the
+  directory of a relative config path like `config.json` instead of
+  `os.TempDir()`. The rename failed when the temporary directory was on another
+  file system, and the config was copied into the shared temporary directory.
+- `Watch`, and so `LoadAndWatch`, reloads a config whose path the file system
+  watcher reports in another form: a relative path like `config.json` never
+  reloaded on Linux, `./config.json` never reloaded on macOS, and a `file://`
+  URI never reloaded on either.
+
 ## [v1.1.0-beta.1] - 2026-10-24
 
 ### Added

@@ -3,7 +3,7 @@ module github.com/ungerik/go-dynconfig
 go 1.26.0
 
 require (
-	github.com/ungerik/go-fs v1.0.0-beta.2
+	github.com/ungerik/go-fs v1.0.0-rc.1
 	golang.org/x/sys v0.49.0
 )
 
