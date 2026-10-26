@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ungerik/go-fs"
 )
@@ -40,6 +42,69 @@ func assertOnlyFile(t *testing.T, dir, name string) {
 		if e.Name() != name {
 			t.Errorf("unexpected leftover file in directory: %s", e.Name())
 		}
+	}
+}
+
+// TestLoadAndWatch_ReloadsChangedFile verifies the hot-reload contract of
+// LoadAndWatch: after the watched file changes on disk, written in place or
+// replaced by an atomic rename like editors and Mutate in another process do,
+// Get returns the new content instead of the cached value and onInvalidate
+// is called.
+//
+// Get is polled because the watcher delivers its events asynchronously and
+// an in-place write can be observed while the file is still truncated; a load
+// error keeps the cache invalid, so a later Get reads the complete file.
+func TestLoadAndWatch_ReloadsChangedFile(t *testing.T) {
+	tests := []struct {
+		name  string
+		write func(path, content string) error
+	}{
+		{"in-place write", func(path, content string) error {
+			return os.WriteFile(path, []byte(content), 0o600)
+		}},
+		{"atomic rename over the file", func(path, content string) error {
+			tmp := path + ".tmp"
+			err := os.WriteFile(tmp, []byte(content), 0o600)
+			if err != nil {
+				return err
+			}
+			return os.Rename(tmp, path)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := writeTempJSON(t, "counter.json", `{"value": 1}`)
+			var invalidated atomic.Int32
+			loader, err := LoadAndWatch(file, LoadJSON[counter], nil, nil, nil, func() { invalidated.Add(1) })
+			if err != nil {
+				t.Fatalf("LoadAndWatch: %s", err)
+			}
+			defer loader.Unwatch() //nolint:errcheck
+			if got := loader.Get().Value; got != 1 {
+				t.Fatalf("initial value = %d, want 1", got)
+			}
+
+			err = tt.write(file.LocalPath(), `{"value": 2}`)
+			if err != nil {
+				t.Fatalf("change file: %s", err)
+			}
+
+			deadline := time.Now().Add(5 * time.Second)
+			for got := loader.Get().Value; got != 2; got = loader.Get().Value {
+				if time.Now().After(deadline) {
+					t.Fatalf("value = %d after the file changed, want 2 (watcher did not invalidate the cache)", got)
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			// Invalidate calls onInvalidate after releasing the mutex,
+			// so Get can return the new value before the callback ran.
+			for invalidated.Load() == 0 {
+				if time.Now().After(deadline) {
+					t.Fatal("onInvalidate was not called after the file changed")
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		})
 	}
 }
 
