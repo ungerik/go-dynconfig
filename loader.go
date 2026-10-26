@@ -146,6 +146,11 @@ type Loader[T any] struct {
 // This is useful when you need to set up the loader but delay the initial load,
 // or when you want to manually control the loading process.
 //
+// A relative path on the local file system is resolved to an absolute path
+// here, so the Loader keeps watching, loading and saving the same file after
+// the working directory changed or was removed. File returns the absolute path
+// and the load and save functions are called with it.
+//
 // Parameters:
 //   - file: The file to load configuration from
 //   - load: Function to load configuration from the file
@@ -189,13 +194,28 @@ func NewLoader[T any](
 	onInvalidate func(),
 ) *Loader[T] {
 	return &Loader[T]{
-		file:         file,
+		file:         absLocalFile(file),
 		load:         load,
 		save:         save,
 		onLoad:       onLoad,
 		onError:      onError,
 		onInvalidate: onInvalidate,
 	}
+}
+
+// absLocalFile returns file with an absolute path if it has a relative path on
+// the local file system. Other files are returned unchanged, and so is a
+// relative path when the working directory can't be determined.
+func absLocalFile(file fs.File) fs.File {
+	localPath := file.LocalPath()
+	if localPath == "" || filepath.IsAbs(localPath) {
+		return file
+	}
+	absPath := fs.Local.AbsPath(localPath)
+	if !filepath.IsAbs(absPath) {
+		return file
+	}
+	return fs.File(absPath)
 }
 
 // LoadAndWatch creates a new Loader that immediately loads the configuration
@@ -459,17 +479,13 @@ func (l *Loader[T]) Watch() error {
 		return fmt.Errorf("config file already watched: %s", l.file)
 	}
 	// The watcher reports a changed file by the path it observed, which can
-	// differ in form from l.file, like "./config.json" for "config.json" or
-	// "/dir/config.json" for "file:///dir/config.json". A local file is watched
-	// in its absolute directory and identified by its absolute path, which
-	// also keeps working after the working directory changed.
-	watchDir := l.file.Dir()
+	// differ in form from l.file, like "/dir/config.json" for
+	// "file:///dir/config.json", so a local file is identified by its path.
 	isConfigFile := func(f fs.File) bool { return f == l.file }
-	if absPath := absLocalPath(l.file); absPath != "" {
-		watchDir = fs.File(filepath.Dir(absPath))
-		isConfigFile = func(f fs.File) bool { return f.LocalPath() == absPath }
+	if localPath := l.file.LocalPath(); localPath != "" {
+		isConfigFile = func(f fs.File) bool { return f.LocalPath() == localPath }
 	}
-	unwatch, err := watchDir.Watch(func(f fs.File, e fs.Event) {
+	unwatch, err := l.file.Dir().Watch(func(f fs.File, e fs.Event) {
 		if isConfigFile(f) && (e.HasCreate() || e.HasWrite()) {
 			l.Invalidate()
 		}
@@ -479,20 +495,6 @@ func (l *Loader[T]) Watch() error {
 	}
 	l.unwatch = unwatch
 	return nil
-}
-
-// absLocalPath returns the absolute local path of file,
-// or an empty string if file is not on the local file system.
-func absLocalPath(file fs.File) string {
-	localPath := file.LocalPath()
-	if localPath == "" {
-		return ""
-	}
-	absPath, err := filepath.Abs(localPath)
-	if err != nil {
-		return ""
-	}
-	return absPath
 }
 
 // Unwatch stops watching the file for changes.
@@ -889,10 +891,14 @@ func (l *Loader[T]) writeConfig(atomic bool, localPath string, config T) error {
 // written file, and a save error or crash leaves the original file intact.
 // The caller must hold the directory lock.
 func (l *Loader[T]) saveAtomic(localPath string, config T) (err error) {
-	// filepath.Split would return an empty directory for a relative path
-	// without one, like "config.json", for which os.CreateTemp would create
-	// the temporary file in os.TempDir instead of the file's directory.
-	dir, name := filepath.Dir(localPath), filepath.Base(localPath)
+	// For a relative path without a directory, like "config.json", os.CreateTemp
+	// would create the temporary file in os.TempDir instead of the current
+	// directory. filepath.Dir is not used because it would turn "./~/config.json"
+	// into "~", which fs.File(tmpPath) reads as the home directory.
+	dir, name := filepath.Split(localPath)
+	if dir == "" {
+		dir = "."
+	}
 	tmp, err := os.CreateTemp(dir, "."+name+".tmp-*")
 	if err != nil {
 		return err

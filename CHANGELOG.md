@@ -25,6 +25,12 @@ and this project adheres to [Go module versioning](https://go.dev/doc/modules/ve
   `SaveXML[T]` for compact output. With any indent, `LoadXML` reads the added
   whitespace back as character data into `,chardata` and `,innerxml` fields,
   so the text of a `,chardata` field grows with every save and load cycle.
+- `NewLoader`, and so `LoadAndWatch` and `MustLoadAndWatch`, resolve a relative
+  local path to an absolute path when the `Loader` is created. `Loader.File`
+  returns it and the load and save functions are called with it. The `Loader`
+  keeps watching, loading and saving the same file after `os.Chdir` or after
+  its working directory was removed; before, a reload after `os.Chdir` read a
+  file with the same name in the new working directory.
 
 ### Fixed
 
@@ -35,8 +41,7 @@ and this project adheres to [Go module versioning](https://go.dev/doc/modules/ve
 - `Watch`, and so `LoadAndWatch`, reloads a config whose path the file system
   watcher reports in another form: a relative path like `config.json` never
   reloaded on Linux, `./config.json` never reloaded on macOS, and a `file://`
-  URI never reloaded on either. A local config is now watched in its absolute
-  directory, so its hot reload also keeps working after `os.Chdir`.
+  URI never reloaded on either.
 
 ## [v1.1.0-beta.1] - 2026-10-24
 
