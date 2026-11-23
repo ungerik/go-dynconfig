@@ -243,6 +243,10 @@ config := dynconfig.MustLoadAndWatch(
 
 ### Text Files
 
+Text files are read as UTF-8. A UTF-8 byte order mark (BOM) at the start of the
+file is removed, so it never ends up in a value. Other encodings, such as UTF-16
+or UTF-32 marked by their BOM, are not detected or decoded.
+
 #### Single String
 
 ```go
@@ -317,6 +321,49 @@ if _, blocked := blacklist[Email("test@example.com")]; blocked {
     log.Println("Email is blacklisted")
 }
 ```
+
+#### Line Comments
+
+`LoadStringLinesFormat` and `LoadStringLineSetFormat` (each with a `T`
+variant) take a `LineFormat` and return the load function. `LineFormat`
+configures whitespace trimming (`TrimSpace`) and line comments
+(`CommentMarkers`, no comments when empty). Everything from the first marker to
+the end of the line is removed together with the whitespace in front of it, and
+lines that are empty afterwards are skipped, so an indented comment line yields
+no value even without `TrimSpace`. Like all text loaders, they remove a UTF-8
+byte order mark at the start of the file, so it can not hide a comment on the
+first line:
+
+```go
+allowedHosts := dynconfig.MustLoadAndWatch(
+    "allowed-hosts.txt",
+    dynconfig.LoadStringLineSetFormat(dynconfig.LineFormat{
+        TrimSpace:      true,
+        CommentMarkers: []string{"#", "//"},
+    }),
+    nil, // save (write-back function used by Set)
+    nil, nil, nil,
+)
+```
+
+Example `allowed-hosts.txt`:
+```
+# production
+api.example.com   # public API
+db.example.com    // primary database
+```
+
+Result: `{"api.example.com", "db.example.com"}`.
+
+Known limitations:
+
+- There is no escape syntax, so a value can not contain a marker. `"//"` cuts
+  `https://example.com` after `https:`.
+- An empty marker is a configuration error: the load function returns it.
+- Comments are only understood when reading. `Set` and `Mutate` write the value
+  through the save function (e.g., `SaveStringLineSetTrimSpace()`), and the
+  value does not carry comments, so writing back removes all comments from the
+  file.
 
 ## Environment Variables
 
@@ -935,6 +982,16 @@ config := dynconfig.MustLoadAndWatch(
 - `LoadStringLineSetTrimSpace(file) (map[string]struct{}, error)` - Load set, trim lines
 
 All text loaders have generic `T` variants (e.g., `LoadStringT[T]`, `LoadStringLinesT[T]`) for custom string types.
+
+Text files are read as UTF-8. All text loaders remove a UTF-8 byte order mark
+(BOM) at the start of the file, and the save functions do not write one. Other
+encodings are not supported: a UTF-16 or UTF-32 file is not detected by its BOM
+or decoded, but read as raw bytes.
+
+`LoadStringLinesFormat(format LineFormat)` and
+`LoadStringLineSetFormat(format LineFormat)`, each with a `T` variant, return a
+line load function configured by `LineFormat{TrimSpace, CommentMarkers}`.
+Writing back with a `Save…` function drops the comments.
 
 Every text loader has a `Save…` counterpart (e.g., `SaveString(file, s)`,
 `SaveStringLines(sep ...string)`).

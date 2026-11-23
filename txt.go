@@ -2,12 +2,31 @@ package dynconfig
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
+	"unicode"
 	"unsafe"
 
 	"github.com/ungerik/go-fs"
 )
+
+// utf8BOM is the UTF-8 encoded byte order mark U+FEFF that some editors write
+// at the start of a text file.
+const utf8BOM = "\uFEFF"
+
+// readAllStringWithoutBOM reads the whole file as a string and removes a UTF-8
+// byte order mark at its start. All text loaders read files with it.
+//
+// Only UTF-8 is handled: the BOMs of other encodings like UTF-16 or UTF-32 are
+// not detected, and such files are returned as raw bytes without decoding.
+func readAllStringWithoutBOM(file fs.File) (string, error) {
+	str, err := file.ReadAllString(context.Background())
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(str, utf8BOM), nil
+}
 
 // SplitLines is a configurable function that splits a string at newlines.
 //
@@ -29,6 +48,11 @@ import (
 //   - LoadStringLinesTrimSpace and LoadStringLinesTrimSpaceT
 //   - LoadStringLineSet and LoadStringLineSetT
 //   - LoadStringLineSetTrimSpace and LoadStringLineSetTrimSpaceT
+//   - LoadStringLinesFormat and LoadStringLinesFormatT
+//   - LoadStringLineSetFormat and LoadStringLineSetFormatT
+//
+// These loaders remove a UTF-8 byte order mark at the start of the file before
+// they call SplitLines, so the BOM never becomes part of the first line.
 var SplitLines = func(str string) []string {
 	// FieldsFunc splits at each run of matching runes and never emits empty
 	// fields, so a "\r\n" pair counts as a single line break (not two) and
@@ -37,6 +61,11 @@ var SplitLines = func(str string) []string {
 }
 
 // LoadString loads the entire file content as a string.
+//
+// The file is read as UTF-8. A UTF-8 byte order mark at the start of the file
+// is removed, like all text loaders of this package do, and SaveString does not
+// write one back. Other encodings are not supported: a UTF-16 or UTF-32 file is
+// not detected by its byte order mark or decoded, but returned as raw bytes.
 //
 // This is the base text loading function. For more specialized loading,
 // see LoadStringTrimSpace, LoadStringLines, or LoadStringLineSet.
@@ -79,6 +108,7 @@ func SaveString(file fs.File, config string) error {
 //
 // Type T must be a string type (e.g., type MyString string).
 // This is useful for type-safe string configurations.
+// Like LoadString, it removes a UTF-8 byte order mark at the start of the file.
 //
 // Example:
 //
@@ -90,7 +120,7 @@ func SaveString(file fs.File, config string) error {
 //	}
 //	// key is of type APIKey
 func LoadStringT[T ~string](file fs.File) (T, error) {
-	str, err := file.ReadAllString(context.Background())
+	str, err := readAllStringWithoutBOM(file)
 	if err != nil {
 		return "", err
 	}
@@ -119,7 +149,9 @@ func SaveStringT[T ~string](file fs.File, config T) error {
 
 // LoadStringTrimSpace loads the file content as a string with whitespace trimmed.
 //
-// Removes leading and trailing whitespace (spaces, tabs, newlines) from the content.
+// Removes leading and trailing whitespace (spaces, tabs, newlines) from the
+// content, and a UTF-8 byte order mark at the start of the file, which
+// strings.TrimSpace does not count as whitespace.
 //
 // Example:
 //
@@ -150,7 +182,8 @@ func SaveStringTrimSpace(file fs.File, config string) error {
 
 // LoadStringTrimSpaceT loads the file content as a string type T with whitespace trimmed.
 //
-// Combines LoadStringT with whitespace trimming.
+// Combines LoadStringT with whitespace trimming. Like LoadStringTrimSpace, it
+// also removes a UTF-8 byte order mark at the start of the file.
 //
 // Example:
 //
@@ -160,7 +193,7 @@ func SaveStringTrimSpace(file fs.File, config string) error {
 //	token, err := dynconfig.LoadStringTrimSpaceT[Token]("auth-token.txt")
 //	// token will be Token("secret123")
 func LoadStringTrimSpaceT[T ~string](file fs.File) (T, error) {
-	str, err := file.ReadAllString(context.Background())
+	str, err := readAllStringWithoutBOM(file)
 	if err != nil {
 		return "", err
 	}
@@ -191,7 +224,8 @@ func SaveStringTrimSpaceT[T ~string](file fs.File, config T) error {
 // LoadStringLines loads the file as a slice of strings, one per line.
 //
 // Lines are split using the SplitLines function, which handles Unix, Windows,
-// and old Mac line endings by default.
+// and old Mac line endings by default. A UTF-8 byte order mark at the start of
+// the file is removed first.
 //
 // Example:
 //
@@ -203,11 +237,7 @@ func SaveStringTrimSpaceT[T ~string](file fs.File, config T) error {
 //	hosts, err := dynconfig.LoadStringLines("hosts.txt")
 //	// hosts = []string{"api.example.com", "db.example.com", "cache.example.com"}
 func LoadStringLines(file fs.File) ([]string, error) {
-	str, err := file.ReadAllString(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	return SplitLines(str), nil
+	return loadLines[string](file, lineFilter{})
 }
 
 // SaveStringLines returns a save function that writes a slice of strings to the
@@ -261,11 +291,7 @@ func SaveStringLines(sep ...string) func(file fs.File, config []string) error {
 //	hosts, err := dynconfig.LoadStringLinesT[Hostname]("servers.txt")
 //	// Returns []Hostname
 func LoadStringLinesT[T ~string](file fs.File) ([]T, error) {
-	strs, err := LoadStringLines(file)
-	if err != nil {
-		return nil, err
-	}
-	return *(*[]T)(unsafe.Pointer(&strs)), nil //#nosec G103 -- unsafe OK
+	return loadLines[T](file, lineFilter{})
 }
 
 // SaveStringLinesT returns a save function that writes a slice of strings of
@@ -356,18 +382,7 @@ func SaveStringLinesTrimSpace(sep ...string) func(file fs.File, config []string)
 //	emails, err := dynconfig.LoadStringLinesTrimSpaceT[Email]("emails.txt")
 //	// emails = []Email{"user@example.com", "admin@example.com"}
 func LoadStringLinesTrimSpaceT[T ~string](file fs.File) ([]T, error) {
-	str, err := file.ReadAllString(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	strs := SplitLines(str)
-	slice := make([]T, 0, len(strs))
-	for _, s := range strs {
-		if s = strings.TrimSpace(s); s != "" {
-			slice = append(slice, T(s))
-		}
-	}
-	return slice, nil
+	return loadLines[T](file, lineFilter{trimSpace: true})
 }
 
 // SaveStringLinesTrimSpaceT returns a save function that writes a slice of type
@@ -462,16 +477,7 @@ func SaveStringLineSet(sep ...string) func(file fs.File, config map[string]struc
 //	allowed, err := dynconfig.LoadStringLineSetT[Domain]("allowed-domains.txt")
 //	// Returns map[Domain]struct{}
 func LoadStringLineSetT[T ~string](file fs.File) (map[T]struct{}, error) {
-	str, err := file.ReadAllString(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	strs := SplitLines(str)
-	set := make(map[T]struct{}, len(strs))
-	for _, s := range strs {
-		set[T(s)] = struct{}{}
-	}
-	return set, nil
+	return loadLineSet[T](file, lineFilter{})
 }
 
 // SaveStringLineSetT returns a save function that writes a set of strings of
@@ -573,18 +579,7 @@ func SaveStringLineSetTrimSpace(sep ...string) func(file fs.File, config map[str
 //	blocked, err := dynconfig.LoadStringLineSetTrimSpaceT[IPAddress]("blocked-ips.txt")
 //	// blocked = map[IPAddress]struct{}{"192.168.1.1": {}, "10.0.0.1": {}}
 func LoadStringLineSetTrimSpaceT[T ~string](file fs.File) (map[T]struct{}, error) {
-	str, err := file.ReadAllString(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	strs := SplitLines(str)
-	set := make(map[T]struct{}, len(strs))
-	for _, s := range strs {
-		if s = strings.TrimSpace(s); s != "" {
-			set[T(s)] = struct{}{}
-		}
-	}
-	return set, nil
+	return loadLineSet[T](file, lineFilter{trimSpace: true})
 }
 
 // SaveStringLineSetTrimSpaceT returns a save function that writes a set of
@@ -617,6 +612,254 @@ func SaveStringLineSetTrimSpaceT[T ~string](sep ...string) func(file fs.File, co
 		}
 		return save(file, set)
 	}
+}
+
+// LineFormat configures how the line loaders LoadStringLinesFormat,
+// LoadStringLinesFormatT, LoadStringLineSetFormat and LoadStringLineSetFormatT
+// turn the lines of a file into values.
+//
+// The zero value reads the lines like LoadStringLines and LoadStringLineSet.
+// Like all line loaders, the LineFormat loaders remove a UTF-8 byte order mark
+// at the start of the file, so it can not hide a comment on the first line.
+type LineFormat struct {
+	// TrimSpace trims leading and trailing whitespace from every line and
+	// skips lines that are empty after trimming, like LoadStringLinesTrimSpace
+	// and LoadStringLineSetTrimSpace.
+	TrimSpace bool
+
+	// CommentMarkers are the line comment markers, for example "#" or "//".
+	// No markers means no comments.
+	//
+	// Everything from the first occurrence of any marker to the end of the
+	// line is a comment. The comment and the whitespace in front of it are
+	// removed before the line is used as a value, and lines that are empty
+	// after that are skipped. So a line holding only a comment, even an
+	// indented one, yields no value, and "spam.com   # reported" yields
+	// "spam.com" also without TrimSpace.
+	//
+	// There is no escape syntax: a value can not contain a marker. Choose
+	// markers that do not occur in values, for example "//" cuts URLs like
+	// "https://example.com" after "https:".
+	//
+	// An empty marker is an error that the load function returns.
+	//
+	// Comments are only understood when reading. A save function like
+	// SaveStringLines writes the values it is given, so Loader.Mutate and
+	// Loader.Set overwrite the file without its comments, and a value
+	// containing a marker is cut at the marker when the file is read back.
+	CommentMarkers []string
+}
+
+// LoadStringLinesFormat returns a load function that reads the file as a slice
+// of strings, one per line, handling whitespace and line comments as configured
+// by format.
+//
+// Because it needs the format as configuration, it is a factory returning the
+// load function rather than a load function itself.
+//
+// Example:
+//
+//	// emails.txt contains:
+//	// # admins
+//	//   admin@example.com   # on call
+//	//
+//	//   user@example.com
+//
+//	loader := dynconfig.MustLoadAndWatch(
+//	    "emails.txt",
+//	    dynconfig.LoadStringLinesFormat(dynconfig.LineFormat{
+//	        TrimSpace:      true,
+//	        CommentMarkers: []string{"#"},
+//	    }),
+//	    dynconfig.SaveStringLinesTrimSpace(), // writes without comments
+//	    nil, nil, nil,
+//	)
+//	// loader.Get() = []string{"admin@example.com", "user@example.com"}
+func LoadStringLinesFormat(format LineFormat) func(file fs.File) ([]string, error) {
+	return LoadStringLinesFormatT[string](format)
+}
+
+// LoadStringLinesFormatT returns a load function that reads the file as a slice
+// of strings of type T, one per line, handling whitespace and line comments as
+// configured by format.
+//
+// Type T must be a string type.
+//
+// Example:
+//
+//	type Hostname string
+//
+//	loader := dynconfig.MustLoadAndWatch(
+//	    "servers.txt",
+//	    dynconfig.LoadStringLinesFormatT[Hostname](dynconfig.LineFormat{
+//	        CommentMarkers: []string{"#", "//"},
+//	    }),
+//	    nil, nil, nil, nil,
+//	)
+func LoadStringLinesFormatT[T ~string](format LineFormat) func(file fs.File) ([]T, error) {
+	filter, err := newLineFilter(format)
+	return func(file fs.File) ([]T, error) {
+		if err != nil {
+			return nil, err
+		}
+		return loadLines[T](file, filter)
+	}
+}
+
+// LoadStringLineSetFormat returns a load function that reads the file as a
+// unique set of strings, one per line, handling whitespace and line comments as
+// configured by format.
+//
+// Lines that are equal after removing comments (and trimming) result in a
+// single entry.
+//
+// Example:
+//
+//	// blocked.txt contains:
+//	// // known spammers
+//	// spam.com
+//	// malicious.org   // since 2026
+//
+//	loader := dynconfig.MustLoadAndWatch(
+//	    "blocked.txt",
+//	    dynconfig.LoadStringLineSetFormat(dynconfig.LineFormat{
+//	        CommentMarkers: []string{"//"},
+//	    }),
+//	    nil, nil, nil, nil,
+//	)
+//	// loader.Get() = map[string]struct{}{"spam.com": {}, "malicious.org": {}}
+func LoadStringLineSetFormat(format LineFormat) func(file fs.File) (map[string]struct{}, error) {
+	return LoadStringLineSetFormatT[string](format)
+}
+
+// LoadStringLineSetFormatT returns a load function that reads the file as a
+// unique set of strings of type T, one per line, handling whitespace and line
+// comments as configured by format.
+//
+// Type T must be a string type.
+//
+// Example:
+//
+//	type IPAddress string
+//
+//	loader := dynconfig.MustLoadAndWatch(
+//	    "blocked-ips.txt",
+//	    dynconfig.LoadStringLineSetFormatT[IPAddress](dynconfig.LineFormat{
+//	        TrimSpace:      true,
+//	        CommentMarkers: []string{"#"},
+//	    }),
+//	    nil, nil, nil, nil,
+//	)
+func LoadStringLineSetFormatT[T ~string](format LineFormat) func(file fs.File) (map[T]struct{}, error) {
+	filter, err := newLineFilter(format)
+	return func(file fs.File) (map[T]struct{}, error) {
+		if err != nil {
+			return nil, err
+		}
+		return loadLineSet[T](file, filter)
+	}
+}
+
+// lineFilter is a LineFormat prepared for reading: its comment markers are
+// checked and copied so the caller can not change them later.
+type lineFilter struct {
+	trimSpace bool
+	markers   []string
+}
+
+// newLineFilter checks the comment markers of format and returns the lineFilter
+// for it. An empty marker is an error because it would match at the start of
+// every line and turn the whole file into a comment.
+func newLineFilter(format LineFormat) (lineFilter, error) {
+	if slices.Contains(format.CommentMarkers, "") {
+		return lineFilter{}, errors.New("dynconfig: empty line comment marker in LineFormat.CommentMarkers")
+	}
+	return lineFilter{
+		trimSpace: format.TrimSpace,
+		markers:   slices.Clone(format.CommentMarkers),
+	}, nil
+}
+
+// changesLines reports whether the filter changes or skips any line.
+func (f lineFilter) changesLines() bool {
+	return f.trimSpace || len(f.markers) > 0
+}
+
+// readLines reads the file without its byte order mark and splits it into
+// lines with SplitLines. Removing the BOM first means it neither becomes part
+// of the first value nor hides a comment on the first line.
+func (f lineFilter) readLines(file fs.File) ([]string, error) {
+	str, err := readAllStringWithoutBOM(file)
+	if err != nil {
+		return nil, err
+	}
+	return SplitLines(str), nil
+}
+
+// value returns line with its comment and whitespace removed as configured,
+// and false if the line yields no value.
+func (f lineFilter) value(line string) (string, bool) {
+	if !f.changesLines() {
+		return line, true
+	}
+	line = stripLineComment(line, f.markers)
+	if f.trimSpace {
+		line = strings.TrimSpace(line)
+	}
+	return line, line != ""
+}
+
+// loadLines reads the file as a slice of lines of type T, filtered by filter.
+// It is shared by all line slice loaders.
+func loadLines[T ~string](file fs.File, filter lineFilter) ([]T, error) {
+	strs, err := filter.readLines(file)
+	if err != nil {
+		return nil, err
+	}
+	if !filter.changesLines() {
+		return *(*[]T)(unsafe.Pointer(&strs)), nil //#nosec G103 -- unsafe OK
+	}
+	lines := make([]T, 0, len(strs))
+	for _, s := range strs {
+		if v, ok := filter.value(s); ok {
+			lines = append(lines, T(v))
+		}
+	}
+	return lines, nil
+}
+
+// loadLineSet reads the file as a set of lines of type T, filtered by filter.
+// It is shared by all line set loaders.
+func loadLineSet[T ~string](file fs.File, filter lineFilter) (map[T]struct{}, error) {
+	strs, err := filter.readLines(file)
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[T]struct{}, len(strs))
+	for _, s := range strs {
+		if v, ok := filter.value(s); ok {
+			set[T(v)] = struct{}{}
+		}
+	}
+	return set, nil
+}
+
+// stripLineComment returns line cut at the first occurrence of any of the
+// markers, with the whitespace in front of the marker removed, or line
+// unchanged if it contains none of them.
+func stripLineComment(line string, markers []string) string {
+	end := len(line)
+	for _, marker := range markers {
+		// Search the whole line, not line[:end]: a marker starting before end
+		// may extend past it.
+		if i := strings.Index(line, marker); i >= 0 && i < end {
+			end = i
+		}
+	}
+	if end == len(line) {
+		return line
+	}
+	return strings.TrimRightFunc(line[:end], unicode.IsSpace)
 }
 
 // resolveLineSeparator returns the line separator to use when writing lines.
