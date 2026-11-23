@@ -359,7 +359,8 @@ Known limitations:
 
 - There is no escape syntax, so a value can not contain a marker. `"//"` cuts
   `https://example.com` after `https:`.
-- An empty marker is a configuration error: the load function returns it.
+- An empty marker, or one containing a line break, is a configuration error:
+  the load function returns it.
 - Comments are only understood when reading. `Set` and `Mutate` write the value
   through the save function (e.g., `SaveStringLineSetTrimSpace()`), and the
   value does not carry comments, so writing back removes all comments from the

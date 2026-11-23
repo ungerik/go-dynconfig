@@ -650,7 +650,8 @@ func TestLoadStringLineSetFormatT(t *testing.T) {
 }
 
 // TestLoadStringLinesFormat_ZeroValue verifies that the zero LineFormat and a
-// TrimSpace-only LineFormat read the lines like the plain loaders.
+// TrimSpace-only LineFormat read the lines like the plain loaders, and that
+// comment markers change nothing in a file without comments.
 func TestLoadStringLinesFormat_ZeroValue(t *testing.T) {
 	file := memFile(t, "data.txt", linesContent)
 
@@ -661,8 +662,12 @@ func TestLoadStringLinesFormat_ZeroValue(t *testing.T) {
 	}{
 		{LineFormat{}, LoadStringLines, LoadStringLineSet},
 		{LineFormat{TrimSpace: true}, LoadStringLinesTrimSpace, LoadStringLineSetTrimSpace},
+		// linesContent has no "#", so comment markers alone must keep the
+		// whitespace-only and padded lines like the plain loaders do.
+		{hashComments, LoadStringLines, LoadStringLineSet},
+		{trimHashComments, LoadStringLinesTrimSpace, LoadStringLineSetTrimSpace},
 	} {
-		t.Run(fmt.Sprintf("TrimSpace=%t", tt.format.TrimSpace), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%+v", tt.format), func(t *testing.T) {
 			lines, err := LoadStringLinesFormat(tt.format)(file)
 			if err != nil {
 				t.Fatalf("LoadStringLinesFormat: %s", err)
@@ -765,11 +770,15 @@ func TestLoadStringLinesFormat_CustomSplitLines(t *testing.T) {
 }
 
 // TestLoadStringLinesFormat_EmptyMarker verifies that an empty comment marker
-// is returned as an error by the load function instead of panicking.
+// or one with a line break is returned as an error by the load function
+// instead of panicking.
 func TestLoadStringLinesFormat_EmptyMarker(t *testing.T) {
 	file := memFile(t, "data.txt", commentedContent)
 
-	for _, markers := range [][]string{{""}, {"#", ""}} {
+	// A marker with a line break can never match because SplitLines removed
+	// the line breaks, so it is rejected like an empty marker instead of
+	// silently turning comments into values.
+	for _, markers := range [][]string{{""}, {"#", ""}, {"\n#"}, {"#", "\r"}} {
 		format := LineFormat{CommentMarkers: markers}
 		if _, err := LoadStringLinesFormat(format)(file); err == nil {
 			t.Errorf("LoadStringLinesFormat(%q): expected error", markers)
@@ -860,6 +869,24 @@ func TestStripLineComment(t *testing.T) {
 	for _, tt := range tests {
 		if got := stripLineComment(tt.line, tt.markers); got != tt.want {
 			t.Errorf("stripLineComment(%q, %q) = %q, want %q", tt.line, tt.markers, got, tt.want)
+		}
+	}
+}
+
+// TestTextLoaders_FileNotExist verifies that the TrimSpace string loaders and
+// the line loaders built on the shared helpers return the read error of a
+// missing file instead of an empty config.
+func TestTextLoaders_FileNotExist(t *testing.T) {
+	file := missingMemFile(t, "data.txt")
+
+	for name, load := range map[string]func(fs.File) error{
+		"LoadStringTrimSpace":  func(f fs.File) error { _, err := LoadStringTrimSpace(f); return err },
+		"LoadStringTrimSpaceT": func(f fs.File) error { _, err := LoadStringTrimSpaceT[host](f); return err },
+		"LoadStringLines":      func(f fs.File) error { _, err := LoadStringLines(f); return err },
+		"LoadStringLineSet":    func(f fs.File) error { _, err := LoadStringLineSet(f); return err },
+	} {
+		if err := load(file); err == nil {
+			t.Errorf("%s: expected error for missing file", name)
 		}
 	}
 }

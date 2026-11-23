@@ -3,6 +3,7 @@ package dynconfig
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"unicode"
@@ -641,7 +642,8 @@ type LineFormat struct {
 	// markers that do not occur in values, for example "//" cuts URLs like
 	// "https://example.com" after "https:".
 	//
-	// An empty marker is an error that the load function returns.
+	// An empty marker, or one containing a line break ('\n' or '\r'), is an
+	// error that the load function returns.
 	//
 	// Comments are only understood when reading. A save function like
 	// SaveStringLines writes the values it is given, so Loader.Mutate and
@@ -769,10 +771,18 @@ type lineFilter struct {
 
 // newLineFilter checks the comment markers of format and returns the lineFilter
 // for it. An empty marker is an error because it would match at the start of
-// every line and turn the whole file into a comment.
+// every line and turn the whole file into a comment. A marker containing a line
+// break is an error because the lines are searched after SplitLines removed the
+// line breaks, so such a marker never matches and its comments would silently
+// become values.
 func newLineFilter(format LineFormat) (lineFilter, error) {
-	if slices.Contains(format.CommentMarkers, "") {
-		return lineFilter{}, errors.New("dynconfig: empty line comment marker in LineFormat.CommentMarkers")
+	for _, marker := range format.CommentMarkers {
+		if marker == "" {
+			return lineFilter{}, errors.New("dynconfig: empty line comment marker in LineFormat.CommentMarkers")
+		}
+		if strings.ContainsAny(marker, "\n\r") {
+			return lineFilter{}, fmt.Errorf("dynconfig: line comment marker %q in LineFormat.CommentMarkers contains a line break", marker)
+		}
 	}
 	return lineFilter{
 		trimSpace: format.TrimSpace,
