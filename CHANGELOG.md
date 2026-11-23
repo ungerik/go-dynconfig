@@ -8,6 +8,32 @@ and this project adheres to [Go module versioning](https://go.dev/doc/modules/ve
 
 ## [Unreleased]
 
+## [v1.1.0-rc.2] - 2026-11-23
+
+### Added
+
+- `LineFormat` with the load function factories `LoadStringLinesFormat` and
+  `LoadStringLineSetFormat`, each with a `T` variant for custom string types.
+  `LineFormat.TrimSpace` trims every line, and `LineFormat.CommentMarkers`
+  (for example `"#"` or `"//"`) makes the loaders ignore line comments: the
+  comment and the whitespace in front of it are removed, and lines that are
+  empty afterwards, such as indented comment lines, are skipped. An empty
+  marker, or one containing a line break, is returned as an error by the load
+  function. Comments are only understood when reading: `Set` and `Mutate`
+  write the value without the comments of the file.
+
+### Fixed
+
+- All text loaders (`LoadString`, `LoadStringTrimSpace`, the line and line set
+  loaders, their `T` variants and the new `LineFormat` loaders) remove a UTF-8
+  byte order mark at the start of the file. Before, a file saved with a BOM
+  (e.g., by Windows Notepad) returned the invisible U+FEFF as part of the
+  value or of the first line, even with `TrimSpace` because `strings.TrimSpace`
+  does not count it as whitespace, so a comparison or set lookup missed. The
+  save functions do not write a BOM back. Only UTF-8 is supported: files in
+  other encodings, such as UTF-16 or UTF-32 marked by their BOM, are not
+  detected or decoded and are read as raw bytes.
+
 ## [v1.1.0-rc.1] - 2026-10-26
 
 ### Changed
