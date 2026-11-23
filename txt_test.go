@@ -1,7 +1,9 @@
 package dynconfig
 
 import (
+	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/ungerik/go-fs"
@@ -62,6 +64,33 @@ func TestLoadStringTrimSpace(t *testing.T) {
 	}
 	if got != "hello world" {
 		t.Errorf("got %q, want %q", got, "hello world")
+	}
+}
+
+// TestLoadString_ByteOrderMark verifies that the string loaders remove a UTF-8
+// byte order mark at the start of the file. LoadString keeps the whitespace
+// after it, the TrimSpace loaders trim it.
+func TestLoadString_ByteOrderMark(t *testing.T) {
+	file := memFile(t, "data.txt", "\uFEFF  token123  \n")
+
+	tests := []struct {
+		name string
+		load func(fs.File) (string, error)
+		want string
+	}{
+		{"LoadString", LoadString, "  token123  \n"},
+		{"LoadStringT", func(f fs.File) (string, error) { s, err := LoadStringT[host](f); return string(s), err }, "  token123  \n"},
+		{"LoadStringTrimSpace", LoadStringTrimSpace, "token123"},
+		{"LoadStringTrimSpaceT", func(f fs.File) (string, error) { s, err := LoadStringTrimSpaceT[host](f); return string(s), err }, "token123"},
+	}
+	for _, tt := range tests {
+		got, err := tt.load(file)
+		if err != nil {
+			t.Fatalf("%s: %s", tt.name, err)
+		}
+		if got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
+		}
 	}
 }
 
@@ -520,5 +549,344 @@ func TestResolveLineSeparator(t *testing.T) {
 				t.Errorf("resolveLineSeparator(%q) = %q, want %q", tt.sep, got, tt.want)
 			}
 		})
+	}
+}
+
+// commentedContent exercises the LineFormat comment handling:
+//   - a full-line "#" comment (skipped)
+//   - a value with a trailing "#" comment ("alpha  # first", yields "alpha"
+//     because the whitespace in front of a comment is removed too)
+//   - a full-line "//" comment (only a comment with the "//" marker)
+//   - a value with a trailing "//" comment ("beta  // second")
+//   - a duplicate value ("alpha")
+//   - an indented comment ("  # indented", skipped also without TrimSpace)
+//   - a value with surrounding spaces and no comment ("  gamma  ", kept as is
+//     without TrimSpace)
+const commentedContent = "# header\nalpha  # first\n// note\nbeta  // second\nalpha\n  # indented\n  gamma  \n"
+
+var (
+	hashComments          = LineFormat{CommentMarkers: []string{"#"}}
+	hashSlashComments     = LineFormat{CommentMarkers: []string{"#", "//"}}
+	trimHashComments      = LineFormat{TrimSpace: true, CommentMarkers: []string{"#"}}
+	trimHashSlashComments = LineFormat{TrimSpace: true, CommentMarkers: []string{"#", "//"}}
+)
+
+func TestLoadStringLinesFormat(t *testing.T) {
+	file := memFile(t, "data.txt", commentedContent)
+
+	tests := []struct {
+		name   string
+		format LineFormat
+		want   []string
+	}{
+		{"# markers", hashComments, []string{"alpha", "// note", "beta  // second", "alpha", "  gamma  "}},
+		{"# and // markers", hashSlashComments, []string{"alpha", "beta", "alpha", "  gamma  "}},
+		{"trim, # markers", trimHashComments, []string{"alpha", "// note", "beta  // second", "alpha", "gamma"}},
+		{"trim, # and // markers", trimHashSlashComments, []string{"alpha", "beta", "alpha", "gamma"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := LoadStringLinesFormat(tt.format)(file)
+			if err != nil {
+				t.Fatalf("LoadStringLinesFormat: %s", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadStringLinesFormatT(t *testing.T) {
+	file := memFile(t, "data.txt", commentedContent)
+
+	got, err := LoadStringLinesFormatT[host](hashSlashComments)(file)
+	if err != nil {
+		t.Fatalf("LoadStringLinesFormatT: %s", err)
+	}
+	want := []host{"alpha", "beta", "alpha", "  gamma  "}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestLoadStringLineSetFormat(t *testing.T) {
+	file := memFile(t, "data.txt", commentedContent)
+
+	tests := []struct {
+		name   string
+		format LineFormat
+		want   map[string]struct{}
+	}{
+		// "alpha  # first" and "alpha" collide because the whitespace in
+		// front of the comment is removed.
+		{"# and // markers", hashSlashComments, map[string]struct{}{"alpha": {}, "beta": {}, "  gamma  ": {}}},
+		{"trim, # and // markers", trimHashSlashComments, map[string]struct{}{"alpha": {}, "beta": {}, "gamma": {}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := LoadStringLineSetFormat(tt.format)(file)
+			if err != nil {
+				t.Fatalf("LoadStringLineSetFormat: %s", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadStringLineSetFormatT(t *testing.T) {
+	file := memFile(t, "data.txt", commentedContent)
+
+	got, err := LoadStringLineSetFormatT[host](trimHashComments)(file)
+	if err != nil {
+		t.Fatalf("LoadStringLineSetFormatT: %s", err)
+	}
+	want := map[host]struct{}{"alpha": {}, "// note": {}, "beta  // second": {}, "gamma": {}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestLoadStringLinesFormat_ZeroValue verifies that the zero LineFormat and a
+// TrimSpace-only LineFormat read the lines like the plain loaders, and that
+// comment markers change nothing in a file without comments.
+func TestLoadStringLinesFormat_ZeroValue(t *testing.T) {
+	file := memFile(t, "data.txt", linesContent)
+
+	for _, tt := range []struct {
+		format    LineFormat
+		wantLines func(fs.File) ([]string, error)
+		wantSet   func(fs.File) (map[string]struct{}, error)
+	}{
+		{LineFormat{}, LoadStringLines, LoadStringLineSet},
+		{LineFormat{TrimSpace: true}, LoadStringLinesTrimSpace, LoadStringLineSetTrimSpace},
+		// linesContent has no "#", so comment markers alone must keep the
+		// whitespace-only and padded lines like the plain loaders do.
+		{hashComments, LoadStringLines, LoadStringLineSet},
+		{trimHashComments, LoadStringLinesTrimSpace, LoadStringLineSetTrimSpace},
+	} {
+		t.Run(fmt.Sprintf("%+v", tt.format), func(t *testing.T) {
+			lines, err := LoadStringLinesFormat(tt.format)(file)
+			if err != nil {
+				t.Fatalf("LoadStringLinesFormat: %s", err)
+			}
+			wantLines, _ := tt.wantLines(file)
+			if !reflect.DeepEqual(lines, wantLines) {
+				t.Errorf("lines: got %q, want %q", lines, wantLines)
+			}
+
+			set, err := LoadStringLineSetFormat(tt.format)(file)
+			if err != nil {
+				t.Fatalf("LoadStringLineSetFormat: %s", err)
+			}
+			wantSet, _ := tt.wantSet(file)
+			if !reflect.DeepEqual(set, wantSet) {
+				t.Errorf("set: got %q, want %q", set, wantSet)
+			}
+		})
+	}
+}
+
+// TestLoadStringLines_ByteOrderMark verifies that the plain line loaders
+// remove a UTF-8 byte order mark at the start of the file instead of keeping
+// it in the first value.
+func TestLoadStringLines_ByteOrderMark(t *testing.T) {
+	file := memFile(t, "data.txt", "\uFEFFapi.example.com\ndb.example.com\n")
+
+	wantLines := []string{"api.example.com", "db.example.com"}
+	for name, load := range map[string]func(fs.File) ([]string, error){
+		"LoadStringLines":          LoadStringLines,
+		"LoadStringLinesTrimSpace": LoadStringLinesTrimSpace,
+		"LoadStringLinesFormat":    LoadStringLinesFormat(LineFormat{}),
+	} {
+		got, err := load(file)
+		if err != nil {
+			t.Fatalf("%s: %s", name, err)
+		}
+		if !reflect.DeepEqual(got, wantLines) {
+			t.Errorf("%s: got %q, want %q", name, got, wantLines)
+		}
+	}
+
+	wantSet := map[string]struct{}{"api.example.com": {}, "db.example.com": {}}
+	for name, load := range map[string]func(fs.File) (map[string]struct{}, error){
+		"LoadStringLineSet":          LoadStringLineSet,
+		"LoadStringLineSetTrimSpace": LoadStringLineSetTrimSpace,
+		"LoadStringLineSetFormat":    LoadStringLineSetFormat(LineFormat{}),
+	} {
+		got, err := load(file)
+		if err != nil {
+			t.Fatalf("%s: %s", name, err)
+		}
+		if !reflect.DeepEqual(got, wantSet) {
+			t.Errorf("%s: got %q, want %q", name, got, wantSet)
+		}
+	}
+}
+
+// TestLoadStringLinesFormat_ByteOrderMark verifies that a UTF-8 byte order
+// mark at the start of the file does not hide a comment on the first line.
+func TestLoadStringLinesFormat_ByteOrderMark(t *testing.T) {
+	file := memFile(t, "data.txt", "\uFEFF# allowed hosts\napi.example.com\n")
+
+	for _, format := range []LineFormat{hashComments, trimHashComments} {
+		got, err := LoadStringLinesFormat(format)(file)
+		if err != nil {
+			t.Fatalf("LoadStringLinesFormat: %s", err)
+		}
+		if want := []string{"api.example.com"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("TrimSpace=%t: got %q, want %q", format.TrimSpace, got, want)
+		}
+	}
+}
+
+// TestLoadStringLinesFormat_CustomSplitLines verifies that lines that are
+// empty after removing a comment are skipped, while the plain loaders keep the
+// empty lines a custom SplitLines emits.
+func TestLoadStringLinesFormat_CustomSplitLines(t *testing.T) {
+	defaultSplitLines := SplitLines
+	t.Cleanup(func() { SplitLines = defaultSplitLines })
+	SplitLines = func(str string) []string { return strings.Split(str, "\n") }
+
+	file := memFile(t, "data.txt", "a\n\n# comment\nb")
+
+	got, err := LoadStringLinesFormat(hashComments)(file)
+	if err != nil {
+		t.Fatalf("LoadStringLinesFormat: %s", err)
+	}
+	if want := []string{"a", "b"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("LoadStringLinesFormat: got %q, want %q", got, want)
+	}
+
+	got, err = LoadStringLines(file)
+	if err != nil {
+		t.Fatalf("LoadStringLines: %s", err)
+	}
+	if want := []string{"a", "", "# comment", "b"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("LoadStringLines: got %q, want %q", got, want)
+	}
+}
+
+// TestLoadStringLinesFormat_EmptyMarker verifies that an empty comment marker
+// or one with a line break is returned as an error by the load function
+// instead of panicking.
+func TestLoadStringLinesFormat_EmptyMarker(t *testing.T) {
+	file := memFile(t, "data.txt", commentedContent)
+
+	// A marker with a line break can never match because SplitLines removed
+	// the line breaks, so it is rejected like an empty marker instead of
+	// silently turning comments into values.
+	for _, markers := range [][]string{{""}, {"#", ""}, {"\n#"}, {"#", "\r"}} {
+		format := LineFormat{CommentMarkers: markers}
+		if _, err := LoadStringLinesFormat(format)(file); err == nil {
+			t.Errorf("LoadStringLinesFormat(%q): expected error", markers)
+		}
+		if _, err := LoadStringLineSetFormat(format)(file); err == nil {
+			t.Errorf("LoadStringLineSetFormat(%q): expected error", markers)
+		}
+	}
+}
+
+// TestLoadStringLinesFormat_MarkersCopied verifies that changing the caller's
+// CommentMarkers slice after creating the load function has no effect.
+func TestLoadStringLinesFormat_MarkersCopied(t *testing.T) {
+	file := memFile(t, "data.txt", "a # comment\n")
+
+	markers := []string{"#"}
+	load := LoadStringLinesFormat(LineFormat{CommentMarkers: markers})
+	markers[0] = ";"
+
+	got, err := load(file)
+	if err != nil {
+		t.Fatalf("LoadStringLinesFormat: %s", err)
+	}
+	if want := []string{"a"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestLoadStringLinesFormat_FileNotExist verifies that the LineFormat loaders
+// return the read error of a missing file.
+func TestLoadStringLinesFormat_FileNotExist(t *testing.T) {
+	file := missingMemFile(t, "data.txt")
+
+	if _, err := LoadStringLinesFormat(hashComments)(file); err == nil {
+		t.Error("LoadStringLinesFormat: expected error for missing file")
+	}
+	if _, err := LoadStringLineSetFormatT[host](trimHashComments)(file); err == nil {
+		t.Error("LoadStringLineSetFormatT: expected error for missing file")
+	}
+}
+
+// TestLoadStringLinesFormat_SaveDropsComments documents the known limitation
+// that writing a config back with a save function drops the comments of the
+// file, because the loaded value does not carry them.
+func TestLoadStringLinesFormat_SaveDropsComments(t *testing.T) {
+	file := memFile(t, "data.txt", "# allowed hosts\nb.example.com # backup\na.example.com\n")
+	loader := NewLoader(
+		file,
+		LoadStringLineSetFormat(trimHashComments),
+		SaveStringLineSetTrimSpace(),
+		nil, nil, nil,
+	)
+
+	err := loader.Mutate(false, func(set map[string]struct{}) (map[string]struct{}, error) {
+		set["c.example.com"] = struct{}{}
+		return set, nil
+	})
+	if err != nil {
+		t.Fatalf("Mutate: %s", err)
+	}
+	if got, want := readBack(t, file), "a.example.com\nb.example.com\nc.example.com"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestStripLineComment(t *testing.T) {
+	tests := []struct {
+		line    string
+		markers []string
+		want    string
+	}{
+		{"value", []string{"#"}, "value"},
+		{"  value  ", []string{"#"}, "  value  "},
+		{"value # comment", []string{"#"}, "value"},
+		{"  value\t# comment", []string{"#"}, "  value"},
+		{"# comment", []string{"#"}, ""},
+		{"  # comment", []string{"#"}, ""},
+		{"a # b # c", []string{"#"}, "a"},
+		{"a // b # c", []string{"#", "//"}, "a"},
+		{"a # b // c", []string{"#", "//"}, "a"},
+		{"https://example.com", []string{"//"}, "https:"},
+		{"a; b", []string{"#", ";"}, "a"},
+		// "/#" starts before "#", so it must win even though "#" is listed first.
+		{"a/#b", []string{"#", "/#"}, "a"},
+		{"", []string{"#"}, ""},
+		{"value", nil, "value"},
+	}
+	for _, tt := range tests {
+		if got := stripLineComment(tt.line, tt.markers); got != tt.want {
+			t.Errorf("stripLineComment(%q, %q) = %q, want %q", tt.line, tt.markers, got, tt.want)
+		}
+	}
+}
+
+// TestTextLoaders_FileNotExist verifies that the TrimSpace string loaders and
+// the line loaders built on the shared helpers return the read error of a
+// missing file instead of an empty config.
+func TestTextLoaders_FileNotExist(t *testing.T) {
+	file := missingMemFile(t, "data.txt")
+
+	for name, load := range map[string]func(fs.File) error{
+		"LoadStringTrimSpace":  func(f fs.File) error { _, err := LoadStringTrimSpace(f); return err },
+		"LoadStringTrimSpaceT": func(f fs.File) error { _, err := LoadStringTrimSpaceT[host](f); return err },
+		"LoadStringLines":      func(f fs.File) error { _, err := LoadStringLines(f); return err },
+		"LoadStringLineSet":    func(f fs.File) error { _, err := LoadStringLineSet(f); return err },
+	} {
+		if err := load(file); err == nil {
+			t.Errorf("%s: expected error for missing file", name)
+		}
 	}
 }
